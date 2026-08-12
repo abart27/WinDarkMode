@@ -12,7 +12,7 @@ Single-header Win32 C++ dark mode library with a simple API surface based on [wi
 
 This library is loosely based on win32-darkmode, which isn't easily embeddable and a nightmare to work with.
 
-WinDarkMode is single-file and also one-ups win32-darkmode in various aspects, notably by providing Windows 11 support.
+WinDarkMode is single-file and also one-ups win32-darkmode in various aspects, notably by providing Windows 11 support and automatic theme switching.
 
 ## Quickstart
 
@@ -91,5 +91,5 @@ For those who are interested, here are some feature milestones:
   - [x] Up-Down Control
   - [x] Menu Bar
   - [x] Menu Item
-- Automatically react to theme change
+- [x] Automatically react to theme change
 - Allow specifying dark mode syncing behavior: system/force light/force dark
