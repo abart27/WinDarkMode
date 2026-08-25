@@ -10,15 +10,15 @@ Single-header Win32 C++ dark mode library with a simple API surface based on [wi
 
 ## Why?
 
-This library is loosely based on win32-darkmode, which isn't easily embeddable and a nightmare to work with.
+win32-darkmode isn't easily embeddable and doesn't support Windows 11.
 
-WinDarkMode is single-file and also one-ups win32-darkmode in various aspects, notably by providing Windows 11 support and automatic theme switching.
+WinDarkMode one-ups it in several ways: it's single-file, provides Windows 11 support and supports automatic theme switching ("System" theme).
 
 ## Quickstart
 
 1. Download `WinDarkMode.h` and drop into your project
 2. Include it via `#include "WinDarkMode.h"`
-3. Make sure to link `UxTheme.lib`, `Comdlg32.lib`, `Dwmapi.lib`
+3. Make sure to link `uxTheme.lib`, `comdlg32.lib`, `dwmapi.lib`
 4. Initialize it in WinMain `WinDarkMode::init()`
 5. Attach it to a window `WinDarkMode::attach(hwnd)`
 
@@ -46,13 +46,9 @@ int CALLBACK WinMain(const HINSTANCE hInstance, HINSTANCE, LPSTR, const int nSho
 }
 ```
 
-## Attaching to dialogs
+## Dialog Support
 
-WinDarkMode supports attaching to both top-level windows and dialogs.
-
-To attach to a dialog, you still call `WinDarkMode::attach(hwnd);`, but preferrably on `WM_INITDIALOG`. 
-
-`WM_CREATE` should work too, but is less common.
+WinDarkMode supports attaching to both top-level windows and dialogs out of the box.
 
 ## Milestones
 
