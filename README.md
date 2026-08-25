@@ -18,7 +18,7 @@ WinDarkMode one-ups it in several ways: it's single-file, provides Windows 11 su
 
 1. Download `WinDarkMode.h` and drop into your project
 2. Include it via `#include "WinDarkMode.h"`
-3. Make sure to link `uxTheme.lib`, `comdlg32.lib`, `dwmapi.lib`
+3. Link `uxtheme.lib`, `comdlg32.lib`, `dwmapi.lib` in your parent project
 4. Initialize it in WinMain `WinDarkMode::init()`
 5. Attach it to a window `WinDarkMode::attach(hwnd)`
 
