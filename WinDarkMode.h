@@ -1031,7 +1031,7 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
 
     if (class_name == WC_TABCONTROL)
     {
-        SetWindowTheme(hwnd, dark ? TEXT("DarkMode_DarkTheme") : nullptr, nullptr);
+        SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr);
 
         // We have to owner-draw it :(
         const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
@@ -1080,7 +1080,7 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
                 delete reinterpret_cast<ButtonContext *>(old_data);
             }
 
-            SetWindowTheme(hwnd, dark ? TEXT("DarkMode_DarkTheme") : nullptr, nullptr);
+            SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr);
             if (dark)
                 SetWindowSubclass(hwnd, button_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(new ButtonContext{}));
 
@@ -1097,7 +1097,7 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
 
         if (dark)
         {
-            SetWindowTheme(hwnd, TEXT(""), TEXT(""));
+            SetWindowTheme(hwnd, L"", L"");
             SetWindowSubclass(hwnd, statusbar_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(new StatusBarContext{}));
         }
         else
@@ -1108,14 +1108,14 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
         return;
     }
 
-    static const std::unordered_map<std::basic_string<TCHAR>, std::basic_string<TCHAR>> theme_map = {};
+    static const std::unordered_map<std::basic_string<TCHAR>, std::wstring> theme_map = {};
 
     if (dark)
     {
         if (theme_map.contains(class_name))
             SetWindowTheme(hwnd, theme_map.at(class_name).c_str(), nullptr);
         else
-            SetWindowTheme(hwnd, TEXT("DarkMode_DarkTheme"), nullptr);
+            SetWindowTheme(hwnd, L"DarkMode_DarkTheme", nullptr);
     }
     else
     {
