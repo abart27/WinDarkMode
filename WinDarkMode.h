@@ -85,30 +85,30 @@ struct ThemeData
 };
 
 constexpr ThemeData light_theme_data = {.bg_color = RGB(255, 255, 255),
-                                        .text_1_color = RGB(0, 0, 0),
-                                        .text_2_color = RGB(255, 255, 255),
-                                        .listbox_bg_color = RGB(255, 255, 255),
-                                        .edit_bg_color = RGB(255, 255, 255),
-                                        .tab_normal_color = RGB(243, 243, 243),
-                                        .tab_hover_color = RGB(249, 249, 249),
-                                        .disabled_text_color = RGB(160, 160, 160),
-                                        .groupbox_border_color = RGB(180, 180, 180),
-                                        .statusbar_border_color = RGB(200, 200, 200),
-                                        .statusbar_divider_color = RGB(180, 180, 180),
-                                        .statusbar_grip_color = RGB(180, 180, 180)};
+    .text_1_color = RGB(0, 0, 0),
+    .text_2_color = RGB(255, 255, 255),
+    .listbox_bg_color = RGB(255, 255, 255),
+    .edit_bg_color = RGB(255, 255, 255),
+    .tab_normal_color = RGB(243, 243, 243),
+    .tab_hover_color = RGB(249, 249, 249),
+    .disabled_text_color = RGB(160, 160, 160),
+    .groupbox_border_color = RGB(180, 180, 180),
+    .statusbar_border_color = RGB(200, 200, 200),
+    .statusbar_divider_color = RGB(180, 180, 180),
+    .statusbar_grip_color = RGB(180, 180, 180)};
 
 constexpr ThemeData dark_theme_data = {.bg_color = RGB(56, 56, 56),
-                                       .text_1_color = RGB(255, 255, 255),
-                                       .text_2_color = RGB(0, 0, 0),
-                                       .listbox_bg_color = RGB(30, 30, 30),
-                                       .edit_bg_color = RGB(30, 30, 30),
-                                       .tab_normal_color = RGB(80, 80, 80),
-                                       .tab_hover_color = RGB(95, 95, 95),
-                                       .disabled_text_color = RGB(128, 128, 128),
-                                       .groupbox_border_color = RGB(100, 100, 100),
-                                       .statusbar_border_color = RGB(60, 60, 60),
-                                       .statusbar_divider_color = RGB(80, 80, 80),
-                                       .statusbar_grip_color = RGB(120, 120, 120)};
+    .text_1_color = RGB(255, 255, 255),
+    .text_2_color = RGB(0, 0, 0),
+    .listbox_bg_color = RGB(30, 30, 30),
+    .edit_bg_color = RGB(30, 30, 30),
+    .tab_normal_color = RGB(80, 80, 80),
+    .tab_hover_color = RGB(95, 95, 95),
+    .disabled_text_color = RGB(128, 128, 128),
+    .groupbox_border_color = RGB(100, 100, 100),
+    .statusbar_border_color = RGB(60, 60, 60),
+    .statusbar_divider_color = RGB(80, 80, 80),
+    .statusbar_grip_color = RGB(120, 120, 120)};
 
 inline ThemeData theme_data = light_theme_data;
 
@@ -316,8 +316,8 @@ template <typename T> inline constexpr T data_directory_from_module_base(void *m
     return rva_to_va<T>(moduleBase, dataDir[entryID].VirtualAddress);
 }
 
-inline PIMAGE_THUNK_DATA find_address_by_name(void *moduleBase, PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr,
-                                              const char *funcName)
+inline PIMAGE_THUNK_DATA find_address_by_name(
+    void *moduleBase, PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr, const char *funcName)
 {
     for (; impName->u1.Ordinal; ++impName, ++impAddr)
     {
@@ -433,7 +433,7 @@ inline void paint_menu_separator(HWND hwnd)
     if (hdc)
     {
         RECT rc_sep = {mbi.rcBar.left - rc_window.left, mbi.rcBar.bottom - rc_window.top,
-                       mbi.rcBar.right - rc_window.left, mbi.rcBar.bottom - rc_window.top + 1};
+            mbi.rcBar.right - rc_window.left, mbi.rcBar.bottom - rc_window.top + 1};
         FillRect(hdc, &rc_sep, theme_data.bg_brush);
         ReleaseDC(hwnd, hdc);
     }
@@ -509,8 +509,8 @@ inline void patch_scrollbar(bool dark)
     FreeLibrary(comctl_mod);
 }
 
-inline LRESULT CALLBACK tabcontrol_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR,
-                                                 DWORD_PTR dwRefData)
+inline LRESULT CALLBACK tabcontrol_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
 {
     auto ctx = reinterpret_cast<TabControlContext *>(dwRefData);
 
@@ -584,8 +584,8 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(HWND hwnd, UINT msg, WPARAM wPa
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline LRESULT CALLBACK listview_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR,
-                                               DWORD_PTR dwRefData)
+inline LRESULT CALLBACK listview_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
 {
     auto info = reinterpret_cast<ListViewContext *>(dwRefData);
 
@@ -618,8 +618,8 @@ inline LRESULT CALLBACK listview_subclass_proc(HWND hwnd, UINT msg, WPARAM wPara
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline LRESULT CALLBACK groupbox_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
-                                               DWORD_PTR)
+inline LRESULT CALLBACK groupbox_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
 {
     switch (msg)
     {
@@ -684,8 +684,8 @@ inline LRESULT CALLBACK groupbox_subclass_proc(HWND hwnd, UINT msg, WPARAM wPara
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline LRESULT CALLBACK button_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
-                                             DWORD_PTR dwRefData)
+inline LRESULT CALLBACK button_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR dwRefData)
 {
     auto *ctx = reinterpret_cast<ButtonContext *>(dwRefData);
     switch (msg)
@@ -787,8 +787,8 @@ inline LRESULT CALLBACK button_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline LRESULT CALLBACK statusbar_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
-                                                DWORD_PTR dwRefData)
+inline LRESULT CALLBACK statusbar_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR dwRefData)
 {
     auto *ctx = reinterpret_cast<StatusBarContext *>(dwRefData);
 
@@ -875,7 +875,7 @@ inline LRESULT CALLBACK statusbar_subclass_proc(HWND hwnd, UINT msg, WPARAM wPar
 
                 rc_text.right -= borders[0];
                 DrawText(hdc, text.c_str(), static_cast<int>(text.size()), &rc_text,
-                         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
             }
         }
 
@@ -1212,8 +1212,8 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
             const bool hot = (udmi->dis.itemState & ODS_HOTLIGHT) != 0;
             const bool selected = (udmi->dis.itemState & ODS_SELECTED) != 0;
 
-            FillRect(udmi->um.hdc, &udmi->dis.rcItem,
-                     (hot || selected) ? theme_data.tab_normal_brush : theme_data.bg_brush);
+            FillRect(
+                udmi->um.hdc, &udmi->dis.rcItem, (hot || selected) ? theme_data.tab_normal_brush : theme_data.bg_brush);
 
             TCHAR text[256]{};
             MENUITEMINFO mii{};

@@ -168,9 +168,8 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg)
     {
     case WM_INITDIALOG: {
-        m_hwnd_status =
-            CreateWindowExW(0, STATUSCLASSNAMEW, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0, hwnd,
-                            reinterpret_cast<HMENU>(IDC_STATUS), GetModuleHandleW(nullptr), nullptr);
+        m_hwnd_status = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0,
+            0, hwnd, reinterpret_cast<HMENU>(IDC_STATUS), GetModuleHandleW(nullptr), nullptr);
         int sbParts[] = {220, -1};
         SendMessage(m_hwnd_status, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(sbParts));
         SendMessage(m_hwnd_status, SB_SETTEXT, 0, reinterpret_cast<LPARAM>(L"Theme: System (follow OS)"));
@@ -199,10 +198,9 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         SetDlgItemTextW(hwnd, IDC_COMBO1, L"Item 1");
 
-        HWND hSpinner =
-            CreateWindowW(L"msctls_updown32", nullptr,
-                          WS_CHILD | WS_VISIBLE | UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0,
-                          0, 0, 0, hwnd, reinterpret_cast<HMENU>(IDC_SPINNER), GetModuleHandleW(nullptr), nullptr);
+        HWND hSpinner = CreateWindowW(L"msctls_updown32", nullptr,
+            WS_CHILD | WS_VISIBLE | UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, 0, 0, 0,
+            hwnd, reinterpret_cast<HMENU>(IDC_SPINNER), GetModuleHandleW(nullptr), nullptr);
         SendMessage(hSpinner, UDM_SETBUDDY, reinterpret_cast<WPARAM>(GetDlgItem(hwnd, IDC_SPINNER_EDIT)), 0);
         SendMessage(hSpinner, UDM_SETRANGE, 0, MAKELPARAM(100, 0));
         SendMessage(hSpinner, UDM_SETPOS32, 0, 50);
@@ -256,10 +254,10 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             return TRUE;
         case IDC_BUTTON1:
             MessageBoxW(hwnd,
-                        L"Hello from WinDarkMode!\n\n"
-                        L"This dialog showcases the full set of common Win32 controls\n"
-                        L"with dark mode applied via WinDarkMode::attach().",
-                        L"WinDarkMode Demo", MB_OK | MB_ICONINFORMATION);
+                L"Hello from WinDarkMode!\n\n"
+                L"This dialog showcases the full set of common Win32 controls\n"
+                L"with dark mode applied via WinDarkMode::attach().",
+                L"WinDarkMode Demo", MB_OK | MB_ICONINFORMATION);
             return TRUE;
         case IDM_CLOSE:
             DestroyWindow(hwnd);
@@ -267,8 +265,8 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         case IDM_TOGGLE_WINDOW: {
             LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE,
-                              (ex & WS_EX_TOOLWINDOW) ? (ex & ~static_cast<LONG_PTR>(WS_EX_TOOLWINDOW))
-                                                      : (ex | static_cast<LONG_PTR>(WS_EX_TOOLWINDOW)));
+                (ex & WS_EX_TOOLWINDOW) ? (ex & ~static_cast<LONG_PTR>(WS_EX_TOOLWINDOW))
+                                        : (ex | static_cast<LONG_PTR>(WS_EX_TOOLWINDOW)));
             SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
             WinDarkMode::attach(hwnd);
             return TRUE;
