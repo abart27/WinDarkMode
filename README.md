@@ -19,38 +19,24 @@ Based on [win32-darkmode](https://github.com/ysc3839/win32-darkmode) with variou
 <details>
 <summary>Control Support</summary>
 
-- [ ] Animation
-- [x] Button
-- [x] ComboBox
-- [x] ComboBoxEx
-- [ ] Date and Time Picker
-- [x] Edit
-- [ ] Flat Scroll Bar
-- [x] Header Control
-- [ ] Hot Key
-- [ ] Image List
-- [ ] IP Address Control
-- [x] List Box
-- [x] List View
-- [ ] Month Calendar
-- [ ] Pager
-- [ ] Progress Bar
-- [x] Property Sheet
-- [ ] Rebar
-- [ ] Rich Edit
-- [x] Scroll Bar
-- [x] Static Control
-- [x] Status Bar
-- [ ] SysLink
-- [x] Tab
-- [ ] Task Dialog
-- [ ] Toolbar
-- [x] Tooltip
-- [x] Trackbar
-- [x] Tree View
-- [x] Up-Down Control
-- [x] Menu Bar
-- [x] Menu Item
+| Control | Control |
+| --- | --- |
+| ⬜ Animation | ✅ Property Sheet |
+| ✅ Button | ⬜ Rebar |
+| ✅ ComboBox | ⬜ Rich Edit |
+| ✅ ComboBoxEx | ✅ Scroll Bar |
+| ⬜ Date and Time Picker | ✅ Static Control |
+| ✅ Edit | ✅ Status Bar |
+| ⬜ Flat Scroll Bar | ⬜ SysLink |
+| ✅ Header Control | ✅ Tab |
+| ⬜ Hot Key | ⬜ Task Dialog |
+| ⬜ Image List | ⬜ Toolbar |
+| ⬜ IP Address Control | ✅ Tooltip |
+| ✅ List Box | ✅ Trackbar |
+| ✅ List View | ✅ Tree View |
+| ⬜ Month Calendar | ✅ Up-Down Control |
+| ⬜ Pager | ✅ Menu Bar |
+| ⬜ Progress Bar | ✅ Menu Item |
 
 </details>
 
