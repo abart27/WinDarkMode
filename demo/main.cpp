@@ -233,7 +233,7 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         setup_listview(hwnd);
         setup_treeview(hwnd);
 
-        WinDarkMode::attach(hwnd, {.is_dialog = true});
+        WinDarkMode::attach(hwnd, {.is_dialog = true, .exclude_owner_drawn = false});
         reflow(hwnd);
         return TRUE;
     }
@@ -268,7 +268,6 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 (ex & WS_EX_TOOLWINDOW) ? (ex & ~static_cast<LONG_PTR>(WS_EX_TOOLWINDOW))
                                         : (ex | static_cast<LONG_PTR>(WS_EX_TOOLWINDOW)));
             SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-            WinDarkMode::attach(hwnd);
             return TRUE;
         }
         case IDM_FILE_DLG: {
