@@ -1,18 +1,58 @@
-> [!WARNING]
-> This library is still in its alpha stage.
-> While not lacking functionality required for most apps, it's still missing some polish.
-> 
-> Check back later!
+> [!CAUTION]
+> WinDarkMode is ready to use, but expect breaking changes until further notice.
 
 # WinDarkMode
 
-Single-header Win32 C++ dark mode library with a simple API surface based on [win32-darkmode](https://github.com/ysc3839/win32-darkmode).
+Single-header Win32 C++ dark mode library with a simple but flexible API surface.
 
-## Why?
+Based on [win32-darkmode](https://github.com/ysc3839/win32-darkmode) with various enhancements, see the Features section below.
 
-win32-darkmode isn't easily embeddable and doesn't support Windows 11.
+## Features
 
-WinDarkMode one-ups it in several ways: it's single-file, provides Windows 11 support and supports automatic theme switching ("System" theme).
+- Single-file
+- Windows 11 support
+- Automatic theme switching
+- Compatible with MSVC, Clang, GCC
+- Works under MinGW
+- Contains a demo project
+
+<details>
+<summary>Control Support</summary>
+
+- [ ] Animation
+- [x] Button
+- [x] ComboBox
+- [x] ComboBoxEx
+- [ ] Date and Time Picker
+- [x] Edit
+- [ ] Flat Scroll Bar
+- [x] Header Control
+- [ ] Hot Key
+- [ ] Image List
+- [ ] IP Address Control
+- [x] List Box
+- [x] List View
+- [ ] Month Calendar
+- [ ] Pager
+- [ ] Progress Bar
+- [x] Property Sheet
+- [ ] Rebar
+- [ ] Rich Edit
+- [x] Scroll Bar
+- [x] Static Control
+- [x] Status Bar
+- [ ] SysLink
+- [x] Tab
+- [ ] Task Dialog
+- [ ] Toolbar
+- [x] Tooltip
+- [x] Trackbar
+- [x] Tree View
+- [x] Up-Down Control
+- [x] Menu Bar
+- [x] Menu Item
+
+</details>
 
 ## Quickstart
 
@@ -49,43 +89,3 @@ int CALLBACK WinMain(const HINSTANCE hInstance, HINSTANCE, LPSTR, const int nSho
 ## Dialog Support
 
 WinDarkMode supports attaching to both top-level windows and dialogs out of the box.
-
-## Milestones
-
-For those who are interested, here are some feature milestones:
-
-- Control and library support
-  - [ ] Animation
-  - [x] Button
-  - [x] ComboBox
-  - [x] ComboBoxEx
-  - [ ] Date and Time Picker
-  - [x] Edit
-  - [ ] Flat Scroll Bar
-  - [x] Header Control
-  - [ ] Hot Key
-  - [ ] Image List
-  - [ ] IP Address Control
-  - [x] List Box
-  - [x] List View
-  - [ ] Month Calendar
-  - [ ] Pager
-  - [ ] Progress Bar
-  - [x] Property Sheet
-  - [ ] Rebar
-  - [ ] Rich Edit
-  - [x] Scroll Bar
-  - [x] Static Control
-  - [x] Status Bar
-  - [ ] SysLink
-  - [x] Tab
-  - [ ] Task Dialog
-  - [ ] Toolbar
-  - [x] Tooltip
-  - [x] Trackbar
-  - [x] Tree View
-  - [x] Up-Down Control
-  - [x] Menu Bar
-  - [x] Menu Item
-- [x] Automatically react to theme change
-- Allow specifying dark mode syncing behavior: system/force light/force dark
