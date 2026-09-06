@@ -57,6 +57,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
     {
         case WM_CREATE:
             WinDarkMode::attach(hwnd);
+
+            // Additional attach options:
+            // WinDarkMode::attach(hwnd, {.is_dialog = true});
+            // WinDarkMode::attach(hwnd, {.exclude = {GetDlgItem(hwnd, IDC_EXCLUDED)}});
             break;
         default:
             return DefWindowProc(hwnd, Message, wParam, lParam);
@@ -67,8 +71,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
 int CALLBACK WinMain(const HINSTANCE hInstance, HINSTANCE, LPSTR, const int nShowCmd)
 {
     WinDarkMode::init();
-    RegisterClassEx...
-    CreateWindow...
+    // RegisterClassEx...
+    // CreateWindow...
 }
 ```
 
