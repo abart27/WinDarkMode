@@ -1,6 +1,6 @@
 [
   {
-    "label": "cmake: configure",
+    "label": "cmake: configure (win x64)",
     "command": "cmake",
     "args": ["--preset", "debug"],
     "cwd": "$ZED_WORKTREE_ROOT/demo",
