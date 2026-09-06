@@ -1358,7 +1358,7 @@ inline void init()
 {
     using namespace Internal;
 
-    if(initialized) return;
+    if (initialized) return;
 
     initialized = true;
 
@@ -1439,7 +1439,7 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
  */
 inline void set(Theme theme)
 {
-    if(!Internal::dark_mode_supported) return;
+    if (!Internal::dark_mode_supported) return;
 
     Internal::theme = theme;
 
