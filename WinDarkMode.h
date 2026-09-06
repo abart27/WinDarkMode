@@ -1055,8 +1055,13 @@ inline void update_control(HWND hwnd, bool dark, bool exclude_owner_drawn)
                 RemoveWindowSubclass(hwnd, button_subclass_proc, 0);
                 delete reinterpret_cast<ButtonContext *>(old_data);
             }
+
+            SetWindowTheme(hwnd, dark ? TEXT("DarkMode_DarkTheme") : nullptr, nullptr);
             if (dark)
                 SetWindowSubclass(hwnd, button_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(new ButtonContext{}));
+
+            InvalidateRect(hwnd, nullptr, TRUE);
+            return;
         }
     }
 
@@ -1079,17 +1084,14 @@ inline void update_control(HWND hwnd, bool dark, bool exclude_owner_drawn)
         return;
     }
 
-    static const std::unordered_map<std::basic_string<TCHAR>, std::basic_string<TCHAR>> theme_map = {
-        {WC_EDIT, TEXT("DarkMode_DarkTheme")},
-        {WC_COMBOBOX, TEXT("DarkMode_DarkTheme")},
-        {WC_BUTTON, TEXT("DarkMode_Explorer")}};
+    static const std::unordered_map<std::basic_string<TCHAR>, std::basic_string<TCHAR>> theme_map = {};
 
     if (dark)
     {
         if (theme_map.contains(class_name))
             SetWindowTheme(hwnd, theme_map.at(class_name).c_str(), nullptr);
         else
-            SetWindowTheme(hwnd, TEXT("DarkMode_Explorer"), nullptr);
+            SetWindowTheme(hwnd, TEXT("DarkMode_DarkTheme"), nullptr);
     }
     else
     {
