@@ -1,0 +1,40 @@
+name: Draft latest stable release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Tag name for the new release
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the selected revision
+        uses: actions/checkout@v4
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Generate release description
+        run: git-cliff --config cliff.toml --unreleased > release-notes.md
+
+      - name: Draft the latest stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          gh release create "$TAG_NAME" \
+            --draft \
+            --latest \
+            --title "$TAG_NAME" \
+            --notes-file release-notes.md \
+            --target "$GITHUB_SHA" \
+            "$GITHUB_WORKSPACE/WinDarkMode.h#WinDarkMode.h"
