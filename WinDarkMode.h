@@ -1,15 +1,12 @@
 /*
- * Copyright (c) 2026, Aurumaker72.
+ * Copyright (c) 2026, abart27 (https://github.com/abart27).
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 /*
  * WinDarkMode 0.0.1
- * https://github.com/Aurumaker72/WinDarkMode
- * Single-header Win32 dark mode library with a sane and modern API surface.
- * Based on https://github.com/ysc3839/win32-darkmode and
- * https://github.com/stevemk14ebr/PolyHook_2_0/blob/master/sources/IatHook.cpp.
+ * https://github.com/abart27/WinDarkMode
  */
 
 /*

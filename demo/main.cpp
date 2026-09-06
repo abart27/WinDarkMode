@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, Aurumaker72.
+ * Copyright (c) 2026, abart27 (https://github.com/abart27).
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
