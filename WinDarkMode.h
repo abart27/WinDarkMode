@@ -591,7 +591,20 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
             HPEN tab_pen = CreatePen(PS_SOLID, 1, theme_data.tab_hover_color);
             HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, tab_pen));
             HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(hdc, tab_brush));
-            RoundRect(hdc, dis.rcItem.left, dis.rcItem.top, dis.rcItem.right, dis.rcItem.bottom, 6, 6);
+            constexpr int corner_radius = 6;
+            RoundRect(hdc, dis.rcItem.left, dis.rcItem.top, dis.rcItem.right, dis.rcItem.bottom, corner_radius,
+                corner_radius);
+
+            RECT bottom_rc = dis.rcItem;
+            bottom_rc.top = bottom_rc.bottom - corner_radius;
+            FillRect(hdc, &bottom_rc, tab_brush);
+            MoveToEx(hdc, dis.rcItem.left, dis.rcItem.top + corner_radius / 2, nullptr);
+            LineTo(hdc, dis.rcItem.left, dis.rcItem.bottom);
+            MoveToEx(hdc, dis.rcItem.right - 1, dis.rcItem.top + corner_radius / 2, nullptr);
+            LineTo(hdc, dis.rcItem.right - 1, dis.rcItem.bottom);
+            MoveToEx(hdc, dis.rcItem.left, dis.rcItem.bottom - 1, nullptr);
+            LineTo(hdc, dis.rcItem.right, dis.rcItem.bottom - 1);
+
             SelectObject(hdc, old_brush);
             SelectObject(hdc, old_pen);
             DeleteObject(tab_pen);
@@ -1039,6 +1052,19 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
             SetWindowLongPtr(hwnd, GWL_STYLE, style | TCS_OWNERDRAWFIXED);
         else
             SetWindowLongPtr(hwnd, GWL_STYLE, style & ~TCS_OWNERDRAWFIXED);
+
+        if (dark && TabCtrl_GetItemCount(hwnd) > 0)
+        {
+            RECT item_rc{};
+            if (TabCtrl_GetItemRect(hwnd, 0, &item_rc))
+            {
+                const int item_width = item_rc.right - item_rc.left;
+                const int item_height = item_rc.bottom - item_rc.top;
+                const int width = item_width < 60 ? 60 : item_width;
+                const int height = item_height < 24 ? 24 : item_height;
+                if (width != item_width || height != item_height) TabCtrl_SetItemSize(hwnd, width, height);
+            }
+        }
 
         DWORD_PTR old_data = 0;
         if (GetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, &old_data))
