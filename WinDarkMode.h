@@ -44,6 +44,7 @@
 #include <vssym32.h>
 #include <dwmapi.h>
 #include <winerror.h>
+#include <bit>
 #include <cctype>
 #include <cstdint>
 #include <optional>
@@ -260,6 +261,12 @@ struct ButtonContext
 
 using fnRtlGetNtVersionNumbers = void(WINAPI *)(LPDWORD major, LPDWORD minor, LPDWORD build);
 using fnSetWindowCompositionAttribute = BOOL(WINAPI *)(HWND hWnd, WINDOWCOMPOSITIONATTRIBDATA *);
+
+template <typename T> inline T get_proc_address(HMODULE module, LPCSTR name)
+{
+    return std::bit_cast<T>(GetProcAddress(module, name));
+}
+
 // 1809 17763
 using fnShouldAppsUseDarkMode = bool(WINAPI *)();                                            // ordinal 132
 using fnAllowDarkModeForWindow = bool(WINAPI *)(HWND hWnd, bool allow);                      // ordinal 133
@@ -323,8 +330,7 @@ inline PIMAGE_THUNK_DATA find_address_by_name(void *moduleBase, PIMAGE_THUNK_DAT
     return nullptr;
 }
 
-inline PIMAGE_THUNK_DATA find_address_by_ordinal(void *moduleBase, PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr,
-                                                 uint16_t ordinal)
+inline PIMAGE_THUNK_DATA find_address_by_ordinal(PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr, uint16_t ordinal)
 {
     for (; impName->u1.Ordinal; ++impName, ++impAddr)
     {
@@ -384,7 +390,7 @@ inline PIMAGE_THUNK_DATA find_delay_load_thunk_in_module(void *moduleBase, const
 
         auto impName = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportNameTableRVA);
         auto impAddr = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportAddressTableRVA);
-        return find_address_by_ordinal(moduleBase, impName, impAddr, ordinal);
+        return find_address_by_ordinal(impName, impAddr, ordinal);
     }
     return nullptr;
 }
@@ -416,7 +422,8 @@ inline void paint_menu_separator(HWND hwnd)
 {
     if (!GetMenu(hwnd)) return;
 
-    MENUBARINFO mbi{sizeof(mbi)};
+    MENUBARINFO mbi{};
+    mbi.cbSize = sizeof(mbi);
     if (!GetMenuBarInfo(hwnd, OBJID_MENU, 0, &mbi)) return;
 
     RECT rc_window{};
@@ -502,7 +509,7 @@ inline void patch_scrollbar(bool dark)
     FreeLibrary(comctl_mod);
 }
 
-inline LRESULT CALLBACK tabcontrol_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
+inline LRESULT CALLBACK tabcontrol_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR,
                                                  DWORD_PTR dwRefData)
 {
     auto ctx = reinterpret_cast<TabControlContext *>(dwRefData);
@@ -577,7 +584,7 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(HWND hwnd, UINT msg, WPARAM wPa
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline LRESULT CALLBACK listview_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
+inline LRESULT CALLBACK listview_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR,
                                                DWORD_PTR dwRefData)
 {
     auto info = reinterpret_cast<ListViewContext *>(dwRefData);
@@ -612,7 +619,7 @@ inline LRESULT CALLBACK listview_subclass_proc(HWND hwnd, UINT msg, WPARAM wPara
 }
 
 inline LRESULT CALLBACK groupbox_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
-                                               DWORD_PTR dwRefData)
+                                               DWORD_PTR)
 {
     switch (msg)
     {
@@ -1112,8 +1119,7 @@ inline void update_children(HWND hwnd, bool dark, bool exclude_owner_drawn)
 inline void update_theme_data(bool dark);
 inline void update_window_theme(HWND hwnd, bool dark, bool exclude_owner_drawn);
 
-inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
-                                          DWORD_PTR dwRefData)
+inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
 {
     switch (msg)
     {
@@ -1185,7 +1191,8 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
         {
             if (!is_dark()) break;
             auto *udm = reinterpret_cast<UAHMENU *>(lParam);
-            MENUBARINFO mbi{sizeof(mbi)};
+            MENUBARINFO mbi{};
+            mbi.cbSize = sizeof(mbi);
             if (!GetMenuBarInfo(hwnd, OBJID_MENU, 0, &mbi)) break;
             RECT rc_win{};
             GetWindowRect(hwnd, &rc_win);
@@ -1207,13 +1214,15 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
                      (hot || selected) ? theme_data.tab_normal_brush : theme_data.bg_brush);
 
             TCHAR text[256]{};
-            MENUITEMINFO mii{sizeof(mii)};
+            MENUITEMINFO mii{};
+            mii.cbSize = sizeof(mii);
             mii.fMask = MIIM_STRING;
             mii.dwTypeData = text;
             mii.cch = static_cast<UINT>(std::size(text));
             GetMenuItemInfo(udmi->um.hmenu, static_cast<UINT>(udmi->umi.iPosition), TRUE, &mii);
 
-            NONCLIENTMETRICS ncm{sizeof(ncm)};
+            NONCLIENTMETRICS ncm{};
+            ncm.cbSize = sizeof(ncm);
             SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
             HFONT hFont = CreateFontIndirect(&ncm.lfMenuFont);
             HFONT hOldFont = static_cast<HFONT>(SelectObject(udmi->um.hdc, hFont));
@@ -1234,8 +1243,7 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline LRESULT CALLBACK dlg_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId,
-                                          DWORD_PTR dwRefData)
+inline LRESULT CALLBACK dlg_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
 {
     switch (msg)
     {
@@ -1371,8 +1379,8 @@ inline void init()
 
     initialized = true;
 
-    auto RtlGetNtVersionNumbers = reinterpret_cast<fnRtlGetNtVersionNumbers>(
-        GetProcAddress(GetModuleHandle(TEXT("ntdll.dll")), "RtlGetNtVersionNumbers"));
+    auto RtlGetNtVersionNumbers =
+        get_proc_address<fnRtlGetNtVersionNumbers>(GetModuleHandle(TEXT("ntdll.dll")), "RtlGetNtVersionNumbers");
     if (!RtlGetNtVersionNumbers) return;
 
     DWORD major, minor;
@@ -1382,29 +1390,25 @@ inline void init()
     h_uxtheme = LoadLibraryEx(TEXT("uxtheme.dll"), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!h_uxtheme) return;
 
-    _OpenNcThemeData = reinterpret_cast<fnOpenNcThemeData>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(49)));
+    _OpenNcThemeData = get_proc_address<fnOpenNcThemeData>(h_uxtheme, MAKEINTRESOURCEA(49));
     _RefreshImmersiveColorPolicyState =
-        reinterpret_cast<fnRefreshImmersiveColorPolicyState>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(104)));
+        get_proc_address<fnRefreshImmersiveColorPolicyState>(h_uxtheme, MAKEINTRESOURCEA(104));
     _GetIsImmersiveColorUsingHighContrast =
-        reinterpret_cast<fnGetIsImmersiveColorUsingHighContrast>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(106)));
-    _ShouldAppsUseDarkMode =
-        reinterpret_cast<fnShouldAppsUseDarkMode>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(132)));
-    _AllowDarkModeForWindow =
-        reinterpret_cast<fnAllowDarkModeForWindow>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(133)));
+        get_proc_address<fnGetIsImmersiveColorUsingHighContrast>(h_uxtheme, MAKEINTRESOURCEA(106));
+    _ShouldAppsUseDarkMode = get_proc_address<fnShouldAppsUseDarkMode>(h_uxtheme, MAKEINTRESOURCEA(132));
+    _AllowDarkModeForWindow = get_proc_address<fnAllowDarkModeForWindow>(h_uxtheme, MAKEINTRESOURCEA(133));
 
-    _FlushMenuThemes = reinterpret_cast<fnFlushMenuThemes>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(136)));
+    _FlushMenuThemes = get_proc_address<fnFlushMenuThemes>(h_uxtheme, MAKEINTRESOURCEA(136));
 
-    auto ord135 = GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(135));
     if (build_number < 18362)
-        _AllowDarkModeForApp = reinterpret_cast<fnAllowDarkModeForApp>(ord135);
+        _AllowDarkModeForApp = get_proc_address<fnAllowDarkModeForApp>(h_uxtheme, MAKEINTRESOURCEA(135));
     else
-        _SetPreferredAppMode = reinterpret_cast<fnSetPreferredAppMode>(ord135);
+        _SetPreferredAppMode = get_proc_address<fnSetPreferredAppMode>(h_uxtheme, MAKEINTRESOURCEA(135));
 
-    _IsDarkModeAllowedForWindow =
-        reinterpret_cast<fnIsDarkModeAllowedForWindow>(GetProcAddress(h_uxtheme, MAKEINTRESOURCEA(137)));
+    _IsDarkModeAllowedForWindow = get_proc_address<fnIsDarkModeAllowedForWindow>(h_uxtheme, MAKEINTRESOURCEA(137));
 
-    _SetWindowCompositionAttribute = reinterpret_cast<fnSetWindowCompositionAttribute>(
-        GetProcAddress(GetModuleHandle(TEXT("user32.dll")), "SetWindowCompositionAttribute"));
+    _SetWindowCompositionAttribute = get_proc_address<fnSetWindowCompositionAttribute>(
+        GetModuleHandle(TEXT("user32.dll")), "SetWindowCompositionAttribute");
 
     if (_OpenNcThemeData && _RefreshImmersiveColorPolicyState && _ShouldAppsUseDarkMode && _AllowDarkModeForWindow &&
         (_AllowDarkModeForApp || _SetPreferredAppMode) && _IsDarkModeAllowedForWindow)

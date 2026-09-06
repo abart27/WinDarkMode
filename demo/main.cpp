@@ -35,7 +35,6 @@
 
 #include <commctrl.h>
 #include <commdlg.h>
-#include <string>
 #include "resource.h"
 
 static HWND m_hwnd_status = nullptr;
