@@ -1113,6 +1113,13 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
         attached_windows.erase(hwnd);
         pending_separator_repaint.erase(hwnd);
         break;
+    case WM_ERASEBKGND: {
+        RECT client_rect{};
+        GetClientRect(hwnd, &client_rect);
+        const auto brush = theme_data.bg_brush ? theme_data.bg_brush : GetSysColorBrush(COLOR_WINDOW);
+        FillRect(reinterpret_cast<HDC>(wParam), &client_rect, brush);
+        return TRUE;
+    }
     case WM_SETTINGCHANGE:
         if (theme == Theme::System && is_theme_change_message(msg, lParam))
         {
