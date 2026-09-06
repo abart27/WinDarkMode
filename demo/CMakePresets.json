@@ -1,46 +1,80 @@
 {
-    "version": 6,
-    "cmakeMinimumRequired": {
-        "major": 3,
-        "minor": 25,
-        "patch": 0
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}"
     },
-    "configurePresets": [
-        {
-            "name": "base",
-            "hidden": true,
-            "generator": "Visual Studio 18 2026",
-            "architecture": "x64",
-            "toolset": "host=x64",
-            "binaryDir": "${sourceDir}/build/${presetName}"
-        },
-        {
-            "name": "debug",
-            "displayName": "MSVC x64 Debug (VS 2026)",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "release",
-            "displayName": "MSVC x64 Release (VS 2026)",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        }
-    ],
-    "buildPresets": [
-        {
-            "name": "debug",
-            "displayName": "Build Debug (VS 2026)",
-            "configurePreset": "debug"
-        },
-        {
-            "name": "release",
-            "displayName": "Build Release (VS 2026)",
-            "configurePreset": "release"
-        }
-    ]
+    {
+      "name": "debug",
+      "displayName": "Debug (Ninja)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Ninja)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "mingw-linux-x64",
+      "displayName": "MinGW x64 (Linux)",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build",
+      "toolchainFile": "${sourceDir}/toolchains/mingw-cross.cmake",
+      "cacheVariables": {
+        "MINGW_TARGET": "x86_64",
+        "CMAKE_C_COMPILER": "x86_64-w64-mingw32-gcc",
+        "CMAKE_CXX_COMPILER": "x86_64-w64-mingw32-g++",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "mingw-linux-x86",
+      "displayName": "MinGW x86 (Linux)",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build",
+      "toolchainFile": "${sourceDir}/toolchains/mingw-cross.cmake",
+      "cacheVariables": {
+        "MINGW_TARGET": "i686",
+        "CMAKE_C_COMPILER": "i686-w64-mingw32-gcc",
+        "CMAKE_CXX_COMPILER": "i686-w64-mingw32-g++",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Build Debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Build Release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "mingw-linux-x64",
+      "displayName": "Build MinGW x64",
+      "configurePreset": "mingw-linux-x64"
+    },
+    {
+      "name": "mingw-linux-x86",
+      "displayName": "Build MinGW x86",
+      "configurePreset": "mingw-linux-x86"
+    }
+  ]
 }

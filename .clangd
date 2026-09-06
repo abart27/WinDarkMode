@@ -1,4 +1,4 @@
 CompileFlags:
-  Add: ["/std:c++latest"]
+  Add: ["-std=c++20"]
 Completion:
   HeaderInsertion: Never

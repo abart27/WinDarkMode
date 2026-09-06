@@ -31,11 +31,9 @@
  * SOFTWARE.
  */
 
-#pragma warning(push, 0)
 #include "../WinDarkMode.h"
-#pragma warning(pop)
 
-#include <CommCtrl.h>
+#include <commctrl.h>
 #include <commdlg.h>
 #include <string>
 #include "resource.h"
@@ -171,8 +169,9 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg)
     {
     case WM_INITDIALOG: {
-        m_hwnd_status = CreateWindowExW(0, STATUSCLASSNAME, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0,
-                                        hwnd, reinterpret_cast<HMENU>(IDC_STATUS), GetModuleHandleW(nullptr), nullptr);
+        m_hwnd_status =
+            CreateWindowExW(0, STATUSCLASSNAMEW, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0, hwnd,
+                            reinterpret_cast<HMENU>(IDC_STATUS), GetModuleHandleW(nullptr), nullptr);
         int sbParts[] = {220, -1};
         SendMessage(m_hwnd_status, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(sbParts));
         SendMessage(m_hwnd_status, SB_SETTEXT, 0, reinterpret_cast<LPARAM>(L"Theme: System (follow OS)"));
@@ -237,7 +236,7 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         setup_listview(hwnd);
         setup_treeview(hwnd);
 
-        WinDarkMode::attach(hwnd, { .is_dialog = true });
+        WinDarkMode::attach(hwnd, {.is_dialog = true});
         reflow(hwnd);
         return TRUE;
     }
@@ -323,7 +322,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nShowCmd)
 
     WinDarkMode::init();
 
-    HWND hwnd = CreateDialogParamW(hInstance, MAKEINTRESOURCE(IDD_MAIN_DIALOG), nullptr, DlgProc, 0);
+    HWND hwnd = CreateDialogParamW(hInstance, MAKEINTRESOURCEW(IDD_MAIN_DIALOG), nullptr, DlgProc, 0);
 
     if (!hwnd) return 1;
 
