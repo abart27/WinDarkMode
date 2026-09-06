@@ -30,6 +30,7 @@ BEGIN
     LTEXT           "Pushbutton:",          IDC_STATIC,         4,  34,  54,   8
     PUSHBUTTON      "Standard",             IDC_BUTTON1,        4,  44,  50,  14
     PUSHBUTTON      "Disabled",             IDC_BTN_DISABLED,   4,  62,  50,  14, WS_DISABLED
+    PUSHBUTTON      "Excluded",             IDC_BTN_EXCLUDED,   4,  80,  50,  14
 
     LTEXT           "Radiobutton:",         IDC_STATIC,        60,  34,  58,   8
     AUTORADIOBUTTON "Unset",                IDC_DEMO_RADIO1,   60,  44,  52,  10, WS_GROUP | WS_TABSTOP

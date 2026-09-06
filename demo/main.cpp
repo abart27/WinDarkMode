@@ -233,7 +233,7 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         setup_listview(hwnd);
         setup_treeview(hwnd);
 
-        WinDarkMode::attach(hwnd, {.is_dialog = true, .exclude_owner_drawn = false});
+        WinDarkMode::attach(hwnd, {.is_dialog = true, .exclude = {GetDlgItem(hwnd, IDC_BTN_EXCLUDED)}});
         reflow(hwnd);
         return TRUE;
     }

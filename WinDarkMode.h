@@ -39,6 +39,7 @@
 #pragma once
 
 #include <windows.h>
+#include <algorithm>
 #include <uxtheme.h>
 #include <commdlg.h>
 #include <vssym32.h>
@@ -298,7 +299,7 @@ inline ULONG_PTR original_open_nc_theme_data{};
 
 inline bool initialized = false;
 inline Theme theme = Theme::System;
-inline std::unordered_map<HWND, bool> attached_windows;
+inline std::unordered_map<HWND, std::vector<HWND>> attached_windows;
 inline std::unordered_set<HWND> pending_separator_repaint;
 inline bool dark_mode_supported = false;
 inline DWORD build_number = 0;
@@ -973,33 +974,13 @@ inline void update_listview(HWND lv_hwnd, bool dark)
     }
 }
 
-inline bool is_owner_drawn_control(HWND hwnd)
-{
-    TCHAR cls[32]{};
-    GetClassName(hwnd, cls, std::size(cls));
-    std::basic_string<TCHAR> class_name(cls);
-    const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
-
-    if (class_name == WC_BUTTON) return (style & BS_OWNERDRAW) != 0;
-    if (class_name == WC_STATIC) return (style & SS_OWNERDRAW) != 0;
-    if (class_name == WC_LISTBOX) return (style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE)) != 0;
-    if (class_name == WC_COMBOBOX) return (style & (CBS_OWNERDRAWFIXED | CBS_OWNERDRAWVARIABLE)) != 0;
-    if (class_name == WC_TABCONTROL)
-    {
-        DWORD_PTR tab_data = 0;
-        return (style & TCS_OWNERDRAWFIXED) != 0 && !GetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, &tab_data);
-    }
-
-    return false;
-}
-
-inline void update_control(HWND hwnd, bool dark, bool exclude_owner_drawn)
+inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
 {
     TCHAR cls[32]{};
     GetClassName(hwnd, cls, std::size(cls));
     std::basic_string<TCHAR> class_name(cls);
 
-    if (exclude_owner_drawn && is_owner_drawn_control(hwnd)) return;
+    if (std::find(exclude.begin(), exclude.end(), hwnd) != exclude.end()) return;
 
     _AllowDarkModeForWindow(hwnd, dark);
 
@@ -1102,24 +1083,24 @@ inline void update_control(HWND hwnd, bool dark, bool exclude_owner_drawn)
 struct UpdateChildrenContext
 {
     bool dark;
-    bool exclude_owner_drawn;
+    const std::vector<HWND> *exclude;
 };
 
-inline void update_children(HWND hwnd, bool dark, bool exclude_owner_drawn)
+inline void update_children(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
 {
-    UpdateChildrenContext ctx{dark, exclude_owner_drawn};
+    UpdateChildrenContext ctx{dark, &exclude};
     EnumChildWindows(
         hwnd,
         [](HWND hwnd, LPARAM lparam) -> BOOL {
             const auto *ctx = reinterpret_cast<const UpdateChildrenContext *>(lparam);
-            update_control(hwnd, ctx->dark, ctx->exclude_owner_drawn);
+            update_control(hwnd, ctx->dark, *ctx->exclude);
             return TRUE;
         },
         reinterpret_cast<LPARAM>(&ctx));
 }
 
 inline void update_theme_data(bool dark);
-inline void update_window_theme(HWND hwnd, bool dark, bool exclude_owner_drawn);
+inline void update_window_theme(HWND hwnd, bool dark, const std::vector<HWND> &exclude);
 
 inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
 {
@@ -1145,8 +1126,9 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
             if (_FlushMenuThemes) _FlushMenuThemes();
             patch_scrollbar(dark);
             const auto it = attached_windows.find(hwnd);
-            const bool exclude_owner_drawn = it != attached_windows.end() ? it->second : true;
-            update_window_theme(hwnd, dark, exclude_owner_drawn);
+            const std::vector<HWND> empty_exclude;
+            const auto &exclude = it != attached_windows.end() ? it->second : empty_exclude;
+            update_window_theme(hwnd, dark, exclude);
         }
         break;
     case WM_NCPAINT: {
@@ -1174,8 +1156,9 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
             const auto child_hwnd = reinterpret_cast<HWND>(lParam);
             const auto dark = is_dark();
             const auto it = attached_windows.find(hwnd);
-            const bool exclude_owner_drawn = it != attached_windows.end() ? it->second : true;
-            update_control(child_hwnd, dark, exclude_owner_drawn);
+            const std::vector<HWND> empty_exclude;
+            const auto &exclude = it != attached_windows.end() ? it->second : empty_exclude;
+            update_control(child_hwnd, dark, exclude);
             break;
         }
         default:
@@ -1259,11 +1242,12 @@ inline LRESULT CALLBACK dlg_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
         if (!dark) break;
 
         const auto it = attached_windows.find(hwnd);
-        const bool exclude_owner_drawn = it != attached_windows.end() ? it->second : true;
-        if (exclude_owner_drawn && msg != WM_CTLCOLORDLG)
+        const std::vector<HWND> empty_exclude;
+        const auto &exclude = it != attached_windows.end() ? it->second : empty_exclude;
+        if (msg != WM_CTLCOLORDLG)
         {
             const auto child_hwnd = reinterpret_cast<HWND>(lParam);
-            if (child_hwnd && is_owner_drawn_control(child_hwnd)) break;
+            if (child_hwnd && std::find(exclude.begin(), exclude.end(), child_hwnd) != exclude.end()) break;
         }
 
         const auto hdc = reinterpret_cast<HDC>(wParam);
@@ -1305,13 +1289,13 @@ inline bool is_top_level_window(HWND hwnd)
     return false;
 }
 
-inline void update_window_theme(HWND hwnd, bool dark, bool exclude_owner_drawn)
+inline void update_window_theme(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
 {
     _AllowDarkModeForWindow(hwnd, dark);
     BOOL dark2 = dark;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark2, sizeof(dark2));
     refresh_titlebar(hwnd, dark);
-    update_children(hwnd, dark, exclude_owner_drawn);
+    update_children(hwnd, dark, exclude);
     DrawMenuBar(hwnd);
 
     SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, (LONG_PTR)theme_data.bg_brush);
@@ -1361,10 +1345,10 @@ struct AttachOptions
     std::optional<bool> is_dialog = std::nullopt;
 
     /**
-     * @brief If true, owner-drawn controls will be excluded from dark mode.
-     * The host application becomes responsible for properly coloring the controls, for which it can use `theme_data`.
+     * @brief Controls to exclude from dark mode.
+     * The host application becomes responsible for properly coloring these controls, for which it can use `theme_data`.
      */
-    bool exclude_owner_drawn = true;
+    std::vector<HWND> exclude;
 };
 
 inline void set(Theme theme);
@@ -1434,7 +1418,7 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
 
     if (!dark_mode_supported || attached_windows.contains(hwnd)) return;
 
-    attached_windows.emplace(hwnd, options.exclude_owner_drawn);
+    attached_windows.emplace(hwnd, options.exclude);
 
     const auto dark = is_dark();
     update_theme_data(dark);
@@ -1445,7 +1429,7 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
     const bool is_dialog = options.is_dialog.value_or(!is_top_level_window(hwnd));
     if (is_dialog) SetWindowSubclass(hwnd, dlg_subclass_proc, 0, 0);
 
-    update_window_theme(hwnd, dark, options.exclude_owner_drawn);
+    update_window_theme(hwnd, dark, options.exclude);
 }
 
 /**
@@ -1475,9 +1459,9 @@ inline void set(Theme theme)
     if (_FlushMenuThemes) _FlushMenuThemes();
     patch_scrollbar(dark);
 
-    for (const auto &[hwnd, exclude_owner_drawn] : attached_windows)
+    for (const auto &[hwnd, exclude] : attached_windows)
     {
-        update_window_theme(hwnd, dark, exclude_owner_drawn);
+        update_window_theme(hwnd, dark, exclude);
     }
 }
 
