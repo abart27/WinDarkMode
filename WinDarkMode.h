@@ -248,7 +248,7 @@ struct ListViewContext
 
 struct TabControlContext
 {
-    // TODO: Implement hover highlights
+    int hover = -1;
 };
 
 struct StatusBarContext
@@ -522,6 +522,31 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
         RemoveWindowSubclass(hwnd, tabcontrol_subclass_proc, 0);
         break;
     }
+    case WM_MOUSEMOVE: {
+        TCHITTESTINFO hit_info{};
+        hit_info.pt.x = static_cast<short>(LOWORD(lParam));
+        hit_info.pt.y = static_cast<short>(HIWORD(lParam));
+        const int hover = TabCtrl_HitTest(hwnd, &hit_info);
+        if (ctx->hover == hover) return 0;
+
+        const int previous_hover = ctx->hover;
+        ctx->hover = hover;
+        TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, hwnd, 0};
+        TrackMouseEvent(&tme);
+
+        RECT rc{};
+        if (previous_hover >= 0 && TabCtrl_GetItemRect(hwnd, previous_hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
+        if (hover >= 0 && TabCtrl_GetItemRect(hwnd, hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        if (ctx->hover >= 0)
+        {
+            RECT rc{};
+            if (TabCtrl_GetItemRect(hwnd, ctx->hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
+            ctx->hover = -1;
+        }
+        return 0;
     case WM_ERASEBKGND: {
         if (!(GetWindowLongPtr(hwnd, GWL_STYLE) & TCS_OWNERDRAWFIXED)) break;
 
@@ -559,7 +584,17 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
             if (!IntersectRect(&rcIntersect, &ps.rcPaint, &dis.rcItem)) continue;
 
             const bool selected = (i == nSelTab);
-            FillRect(hdc, &dis.rcItem, selected ? theme_data.tab_normal_brush : theme_data.bg_brush);
+            const bool hovered = (i == ctx->hover);
+            HBRUSH tab_brush = selected ? theme_data.tab_normal_brush : theme_data.bg_brush;
+            if (hovered && !selected) tab_brush = theme_data.tab_hover_brush;
+
+            HPEN tab_pen = CreatePen(PS_SOLID, 1, theme_data.tab_hover_color);
+            HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, tab_pen));
+            HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(hdc, tab_brush));
+            RoundRect(hdc, dis.rcItem.left, dis.rcItem.top, dis.rcItem.right, dis.rcItem.bottom, 6, 6);
+            SelectObject(hdc, old_brush);
+            SelectObject(hdc, old_pen);
+            DeleteObject(tab_pen);
 
             TCHAR label[256]{};
             TCITEM tci{};
@@ -1005,10 +1040,18 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
         else
             SetWindowLongPtr(hwnd, GWL_STYLE, style & ~TCS_OWNERDRAWFIXED);
 
-        if (dark)
-            SetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, 0);
-        else
+        DWORD_PTR old_data = 0;
+        if (GetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, &old_data))
+        {
             RemoveWindowSubclass(hwnd, tabcontrol_subclass_proc, 0);
+            delete reinterpret_cast<TabControlContext *>(old_data);
+        }
+
+        if (dark)
+        {
+            auto *ctx = new TabControlContext{};
+            if (!SetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(ctx))) delete ctx;
+        }
 
         InvalidateRect(hwnd, nullptr, TRUE);
         return;
