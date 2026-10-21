@@ -45,10 +45,12 @@
 #include <vssym32.h>
 #include <dwmapi.h>
 #include <winerror.h>
+#include <atomic>
 #include <bit>
 #include <cctype>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -313,12 +315,22 @@ inline fnSetPreferredAppMode _SetPreferredAppMode{};
 inline HMODULE h_uxtheme{};
 inline ULONG_PTR original_open_nc_theme_data{};
 
+inline std::atomic<DWORD> initialization_thread_id{0};
 inline bool initialized = false;
 inline Theme theme = Theme::System;
 inline std::unordered_map<HWND, std::vector<HWND>> attached_windows;
 inline std::unordered_set<HWND> pending_separator_repaint;
 inline bool dark_mode_supported = false;
 inline DWORD build_number = 0;
+
+inline void require_initialization_thread()
+{
+    const DWORD thread_id = initialization_thread_id.load();
+    if (!thread_id)
+        throw std::logic_error("WinDarkMode::init() must be called first");
+    if (thread_id != GetCurrentThreadId())
+        throw std::logic_error("WinDarkMode must be used on the thread that called init()");
+}
 
 template <typename T, typename T1, typename T2> inline constexpr T rva_to_va(T1 base, T2 rva)
 {
@@ -1568,10 +1580,14 @@ struct AttachOptions
 inline void set(Theme theme);
 
 /**
- * @brief Options for `init`. Unspecified options default to true.
+ * @brief Options for `init`.
  */
 struct InitOptions
 {
+    /**
+     * @brief Whether to automatically theme messageboxes. Defaults to `true`.
+     * @remarks Only applies to dialogs owned by the thread that first called `init()`.
+     */
     std::optional<bool> affect_messageboxes = std::nullopt;
 };
 
@@ -1579,19 +1595,8 @@ namespace Internal
 {
 inline InitOptions init_options;
 inline HWINEVENTHOOK dialog_creation_hook = nullptr;
-inline UINT attach_dialog_message = 0;
 
 inline void attach_system_dialog(HWND hwnd);
-
-inline LRESULT CALLBACK dialog_attach_hook(int code, WPARAM wParam, LPARAM lParam)
-{
-    if (code >= 0)
-    {
-        const auto *message = reinterpret_cast<const CWPSTRUCT *>(lParam);
-        if (message->message == attach_dialog_message) attach_system_dialog(message->hwnd);
-    }
-    return CallNextHookEx(nullptr, code, wParam, lParam);
-}
 
 inline void CALLBACK dialog_creation_event(
     HWINEVENTHOOK, DWORD event, HWND hwnd, LONG object_id, LONG child_id, DWORD, DWORD)
@@ -1602,30 +1607,34 @@ inline void CALLBACK dialog_creation_event(
 
     DWORD process_id = 0;
     const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
-    if (!thread_id || process_id != GetCurrentProcessId()) return;
-
-    if (thread_id == GetCurrentThreadId())
-    {
-        attach_system_dialog(hwnd);
+    if (process_id != GetCurrentProcessId() || thread_id != initialization_thread_id.load() ||
+        GetCurrentThreadId() != thread_id)
         return;
-    }
 
-    const HHOOK hook = SetWindowsHookExW(WH_CALLWNDPROC, dialog_attach_hook, nullptr, thread_id);
-    if (!hook) return;
-    DWORD_PTR result = 0;
-    SendMessageTimeoutW(hwnd, attach_dialog_message, 0, 0, SMTO_ABORTIFHUNG | SMTO_BLOCK, 1000, &result);
-    UnhookWindowsHookEx(hook);
+    attach_system_dialog(hwnd);
 }
 } // namespace Internal
 
 /**
- * @brief Initializes dark mode support.
+ * @brief Initializes dark mode support and binds the library to the calling UI thread.
  * @param options Options for automatic dialog attachment.
+ * @throws std::logic_error If called from a thread other than the one that first called `init()`.
+ * @remarks
+ * This function does nothing if WinDarkMode is already initialized.
+ *
+ * Call this before any other public function.
+ * All public function calls after initialization, as well as direct access to theme_data, must stay on this thread.
+ *
+ * Windows passed to attach() must belong to this thread and process.
+ *
  */
 inline void init(const InitOptions &options = {})
 {
     using namespace Internal;
 
+    DWORD expected_thread_id = 0;
+    initialization_thread_id.compare_exchange_strong(expected_thread_id, GetCurrentThreadId());
+    require_initialization_thread();
     if (initialized) return;
 
     initialized = true;
@@ -1673,10 +1682,8 @@ inline void init(const InitOptions &options = {})
     init_options = options;
     if (dark_mode_supported && options.affect_messageboxes.value_or(true))
     {
-        attach_dialog_message = RegisterWindowMessageW(L"WinDarkMode.AttachSystemDialog");
-        if (attach_dialog_message)
-            dialog_creation_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, nullptr,
-                dialog_creation_event, GetCurrentProcessId(), 0, WINEVENT_OUTOFCONTEXT);
+        dialog_creation_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, nullptr,
+            dialog_creation_event, GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT);
     }
 }
 
@@ -1685,10 +1692,17 @@ inline void init(const InitOptions &options = {})
  * @param hwnd The handle to the window.
  * @param options Options for attaching. See `AttachOptions` for details.
  * @remarks Adding, changing, or removing child windows after this call is not properly supported yet.
+ * @throws std::logic_error If called from a thread other than the one that first called `init()`.
  */
 inline void attach(HWND hwnd, const AttachOptions &options = {})
 {
     using namespace Internal;
+
+    require_initialization_thread();
+    DWORD process_id = 0;
+    const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
+    if (thread_id != GetCurrentThreadId() || process_id != GetCurrentProcessId())
+        throw std::logic_error("WinDarkMode::attach() requires a valid window owned by the thread that called WinDarkMode::init()");
 
     if (!dark_mode_supported || attached_windows.contains(hwnd)) return;
 
@@ -1816,9 +1830,11 @@ inline void attach_system_dialog(HWND hwnd)
 /**
  * @brief Sets the app theme.
  * @param theme The theme to set.
+ * @throws std::logic_error If called from a thread other than the one that first called `init()`.
  */
 inline void set(Theme theme)
 {
+    Internal::require_initialization_thread();
     if (!Internal::dark_mode_supported) return;
 
     Internal::theme = theme;
@@ -1848,10 +1864,13 @@ inline void set(Theme theme)
 
 /**
  * @brief Gets the effective theme.
+ * @throws std::logic_error If called from a thread other than the one that first called `init()`.
  */
 inline EffectiveTheme effective_theme()
 {
     using namespace Internal;
+    require_initialization_thread();
+    if (!dark_mode_supported) return EffectiveTheme::Light;
     return is_dark() ? EffectiveTheme::Dark : EffectiveTheme::Light;
 }
 
