@@ -649,6 +649,102 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
+inline LRESULT CALLBACK listbox_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR)
+{
+    switch (msg)
+    {
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(hwnd, listbox_subclass_proc, 0);
+        break;
+
+    case WM_ERASEBKGND:
+        return TRUE;
+    case WM_PAINT:
+    case WM_PRINTCLIENT: {
+        PAINTSTRUCT ps{};
+        HDC target = msg == WM_PAINT ? BeginPaint(hwnd, &ps) : reinterpret_cast<HDC>(wParam);
+        RECT client{};
+        GetClientRect(hwnd, &client);
+        HDC buffer = CreateCompatibleDC(target);
+        HBITMAP bitmap = buffer ? CreateCompatibleBitmap(target, client.right, client.bottom) : nullptr;
+        HGDIOBJ old_bitmap = bitmap ? SelectObject(buffer, bitmap) : nullptr;
+        HDC hdc = bitmap ? buffer : target;
+        const int saved_dc = SaveDC(hdc);
+        IntersectClipRect(hdc, client.left, client.top, client.right, client.bottom);
+        FillRect(hdc, &client, theme_data.listbox_bg_brush);
+
+        const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        const bool multi_select = (style & (LBS_MULTIPLESEL | LBS_EXTENDEDSEL)) != 0;
+        const bool enabled = IsWindowEnabled(hwnd) != FALSE;
+        const bool focused = GetFocus() == hwnd;
+        const int count = static_cast<int>(SendMessage(hwnd, LB_GETCOUNT, 0, 0));
+        const int current = static_cast<int>(SendMessage(hwnd, LB_GETCURSEL, 0, 0));
+        const int caret = static_cast<int>(SendMessage(hwnd, LB_GETCARETINDEX, 0, 0));
+        const bool hide_focus = (SendMessage(hwnd, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS) != 0;
+        HFONT font = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+        if (font) SelectObject(hdc, font);
+        SetBkMode(hdc, TRANSPARENT);
+
+        const int first = static_cast<int>(SendMessage(hwnd, LB_GETTOPINDEX, 0, 0));
+        for (int i = first; i >= 0 && i < count; ++i)
+        {
+            RECT rc{};
+            if (SendMessage(hwnd, LB_GETITEMRECT, i, reinterpret_cast<LPARAM>(&rc)) == LB_ERR) break;
+            if ((style & LBS_MULTICOLUMN) ? rc.left >= client.right : rc.top >= client.bottom) break;
+            RECT visible{};
+            if (!IntersectRect(&visible, &client, &rc)) continue;
+
+            const bool selected =
+                !(style & LBS_NOSEL) && (multi_select ? SendMessage(hwnd, LB_GETSEL, i, 0) > 0 : i == current);
+            FillRect(hdc, &rc, selected ? theme_data.tab_normal_brush : theme_data.listbox_bg_brush);
+            SetTextColor(hdc, enabled ? theme_data.text_1_color : theme_data.disabled_text_color);
+
+            const LRESULT length = SendMessage(hwnd, LB_GETTEXTLEN, i, 0);
+            if (length != LB_ERR)
+            {
+                std::basic_string<TCHAR> text(static_cast<size_t>(length) + 1, TEXT('\0'));
+                if (SendMessage(hwnd, LB_GETTEXT, i, reinterpret_cast<LPARAM>(text.data())) != LB_ERR)
+                {
+                    RECT text_rc = rc;
+                    text_rc.left += 2;
+                    DrawText(hdc, text.c_str(), -1, &text_rc,
+                        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
+                            ((style & LBS_USETABSTOPS) ? DT_EXPANDTABS : 0) |
+                            ((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_RTLREADING) ? DT_RTLREADING : 0));
+                }
+            }
+            if (focused && enabled && i == caret && !hide_focus) DrawFocusRect(hdc, &rc);
+        }
+
+        if (saved_dc) RestoreDC(hdc, saved_dc);
+        if (bitmap)
+        {
+            BitBlt(target, 0, 0, client.right, client.bottom, buffer, 0, 0, SRCCOPY);
+            SelectObject(buffer, old_bitmap);
+            DeleteObject(bitmap);
+        }
+        if (buffer) DeleteDC(buffer);
+        if (msg == WM_PAINT) EndPaint(hwnd, &ps);
+        return 0;
+    }
+    default:
+        break;
+    }
+
+    const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+    if ((msg >= LB_ADDSTRING && msg <= LB_GETLISTBOXINFO) || msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP ||
+        msg == WM_LBUTTONDBLCLK || (msg == WM_MOUSEMOVE && GetCapture() == hwnd) || msg == WM_TIMER ||
+        msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_ENABLE ||
+        msg == WM_SETFONT || msg == WM_SIZE || msg == WM_HSCROLL || msg == WM_VSCROLL || msg == WM_MOUSEWHEEL ||
+        msg == WM_UPDATEUISTATE)
+    {
+        if (msg != LB_GETCOUNT && msg != LB_GETCURSEL && msg != LB_GETCARETINDEX && msg != LB_GETTOPINDEX &&
+            msg != LB_GETITEMRECT && msg != LB_GETSEL && msg != LB_GETTEXTLEN && msg != LB_GETTEXT)
+            InvalidateRect(hwnd, nullptr, FALSE);
+    }
+    return result;
+}
+
 inline LRESULT CALLBACK listview_subclass_proc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
 {
@@ -1055,6 +1151,39 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
     if (class_name == WC_LISTVIEW)
     {
         update_listview(hwnd, dark);
+        return;
+    }
+
+    if (class_name == WC_LISTBOX)
+    {
+        const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        if (style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE | LBS_NODATA)) return;
+
+        constexpr LONG_PTR edge_mask = WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
+        const auto ex_style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        DWORD_PTR original_frame = 0;
+        const bool subclassed = GetWindowSubclass(hwnd, listbox_subclass_proc, 0, &original_frame) != FALSE;
+        SetWindowTheme(hwnd, dark ? L"DarkMode_Explorer" : nullptr, nullptr);
+        if (dark)
+        {
+            if (!subclassed)
+            {
+                original_frame = static_cast<DWORD_PTR>((style & WS_BORDER) | (ex_style & edge_mask));
+                if (!SetWindowSubclass(hwnd, listbox_subclass_proc, 0, original_frame)) return;
+            }
+            SetWindowLongPtr(hwnd, GWL_STYLE, style & ~static_cast<LONG_PTR>(WS_BORDER));
+            SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_style & ~edge_mask);
+        }
+        else if (subclassed)
+        {
+            RemoveWindowSubclass(hwnd, listbox_subclass_proc, 0);
+            SetWindowLongPtr(
+                hwnd, GWL_STYLE, (style & ~static_cast<LONG_PTR>(WS_BORDER)) | (original_frame & WS_BORDER));
+            SetWindowLongPtr(hwnd, GWL_EXSTYLE, (ex_style & ~edge_mask) | (original_frame & edge_mask));
+        }
+        SetWindowPos(
+            hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
         return;
     }
 

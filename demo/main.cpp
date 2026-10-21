@@ -198,7 +198,8 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         SetDlgItemTextW(hwnd, IDC_EDIT_PASSWORD, L"password");
         SetDlgItemTextW(hwnd, IDC_EDIT_READONLY, L"readonly");
 
-        static const wchar_t *const kItems[] = {L"Item 1", L"Item 2", L"Item 3"};
+        static const wchar_t *const kItems[] = {
+            L"Item 1", L"Item 2", L"Item 3", L"Item 4", L"Item 5", L"Item 6", L"Item 7", L"Item 8"};
         for (int id : {IDC_COMBO1, IDC_COMBO2, IDC_COMBO3})
         {
             HWND hC = GetDlgItem(hwnd, id);
