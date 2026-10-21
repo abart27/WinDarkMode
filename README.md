@@ -1,6 +1,3 @@
-> [!CAUTION]
-> WinDarkMode is ready to use, but expect breaking changes until further notice.
-
 # WinDarkMode
 
 Single-header Win32 C++ dark mode library with a simple but flexible API surface.
@@ -15,6 +12,13 @@ Based on [win32-darkmode](https://github.com/ysc3839/win32-darkmode) with variou
 - Compatible with MSVC, Clang, GCC
 - Works under MinGW
 - Contains a demo project
+
+> [!WARNING]
+> WinDarkMode relies on undocumented APIs and may therefore break with future Windows updates.
+>
+> I'm aware of this limitation and am actively maintaining the library, patching stuff along the way.
+>
+> Post an issue if anything's broken and I'll usually get around to it pretty quick!
 
 <details>
 <summary>Control Support</summary>
