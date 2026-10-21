@@ -145,6 +145,65 @@ static void setup_treeview(HWND hwnd)
     TreeView_Expand(hTV, hItem2, TVE_EXPAND);
 }
 
+static HRESULT CALLBACK task_dialog_callback(HWND hwnd, UINT notification, WPARAM, LPARAM, LONG_PTR)
+{
+    if (notification == TDN_CREATED)
+    {
+        SendMessage(hwnd, TDM_SET_PROGRESS_BAR_RANGE, 0, MAKELPARAM(0, 100));
+        SendMessage(hwnd, TDM_SET_PROGRESS_BAR_POS, 65, 0);
+        SendMessage(hwnd, TDM_SET_BUTTON_ELEVATION_REQUIRED_STATE, 1002, TRUE);
+    }
+    return S_OK;
+}
+
+static void show_task_dialog(HWND hwnd)
+{
+    const TASKDIALOG_BUTTON buttons[] = {
+        {1001, L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."},
+        {1002, L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."},
+        {1003, L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."}};
+    const TASKDIALOG_BUTTON radio_buttons[] = {
+        {1101, L"Lorem ipsum dolor sit amet."},
+        {1102, L"Lorem ipsum dolor sit amet."},
+        {1103, L"Lorem ipsum dolor sit amet."}};
+
+    TASKDIALOGCONFIG config = {};
+    config.cbSize = sizeof(config);
+    config.hwndParent = hwnd;
+    config.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | TDF_SHOW_PROGRESS_BAR |
+                     TDF_EXPANDED_BY_DEFAULT | TDF_POSITION_RELATIVE_TO_WINDOW | TDF_SIZE_TO_CONTENT;
+    config.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+    config.pszWindowTitle = L"Lorem ipsum dolor sit amet.";
+    config.pszMainIcon = TD_INFORMATION_ICON;
+    config.pszMainInstruction = L"Lorem ipsum dolor sit amet.";
+    config.pszContent = L"Lorem ipsum dolor sit amet."
+                        L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."
+                        L"Lorem ipsum dolor sit amet.";
+    config.cButtons = ARRAYSIZE(buttons);
+    config.pButtons = buttons;
+    config.nDefaultButton = 1001;
+    config.cRadioButtons = ARRAYSIZE(radio_buttons);
+    config.pRadioButtons = radio_buttons;
+    config.nDefaultRadioButton = 1102;
+    config.pszVerificationText = L"Lorem ipsum dolor sit amet.";
+    config.pszExpandedInformation = L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."
+                                    L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."
+                                    L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."
+                                    L"Lorem ipsum dolor sit amet.\nConsectetur adipiscing elit."
+                                    L"Lorem ipsum dolor sit amet."
+                                    L"Lorem ipsum dolor sit amet.";
+    config.pszExpandedControlText = L"Lorem ipsum dolor sit amet.";
+    config.pszCollapsedControlText = L"Lorem ipsum dolor sit amet.";
+    config.pszFooterIcon = TD_WARNING_ICON;
+    config.pszFooter = L"Lorem ipsum dolor sit amet.";
+    config.pfCallback = task_dialog_callback;
+    config.cxWidth = 360;
+
+    const HRESULT result = TaskDialogIndirect(&config, nullptr, nullptr, nullptr);
+    if (FAILED(result))
+        MessageBoxW(hwnd, L"Lorem ipsum dolor sit amet.", L"Lorem ipsum dolor sit amet.", MB_OK | MB_ICONERROR);
+}
+
 static void reflow(HWND hwnd)
 {
     RECT rc = {};
@@ -272,6 +331,15 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 L"This dialog showcases the full set of common Win32 controls\n"
                 L"with dark mode applied via WinDarkMode::attach().",
                 L"WinDarkMode Demo", MB_OK | MB_ICONINFORMATION);
+            return TRUE;
+        case IDC_BTN_MESSAGEBOX:
+            MessageBoxW(hwnd,
+                L"Lorem ipsum dolor sit amet.\n\n"
+                L"Consectetur adipiscing elit.",
+                L"Consectetur adipiscing elit.", MB_YESNOCANCEL | MB_ICONQUESTION);
+            return TRUE;
+        case IDC_BTN_TASK_DIALOG:
+            show_task_dialog(hwnd);
             return TRUE;
         case IDM_CLOSE:
             DestroyWindow(hwnd);

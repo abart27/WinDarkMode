@@ -88,6 +88,9 @@ BEGIN
     LTEXT           "Trackbar:",            IDC_STATIC,         4, 250,  40,   8
     CONTROL "",                             IDC_TRACKBAR, "msctls_trackbar32", TBS_AUTOTICKS | WS_TABSTOP | WS_CHILD | WS_VISIBLE, 46, 246, 72, 22
 
+    PUSHBUTTON      "Message Box...",       IDC_BTN_MESSAGEBOX, 190, 248, 86, 14
+    PUSHBUTTON      "Task Dialog...",       IDC_BTN_TASK_DIALOG, 282, 248, 86, 14
+
     CONTROL "", IDC_HSCROLL, "ScrollBar", SBS_HORZ | WS_CHILD | WS_VISIBLE,   0, 270, 370,   8
     CONTROL "", IDC_VSCROLL, "ScrollBar", SBS_VERT | WS_CHILD | WS_VISIBLE, 370,   0,  10, 270
 END

@@ -1512,7 +1512,6 @@ inline void update_window_theme(HWND hwnd, bool dark, const std::vector<HWND> &e
     update_children(hwnd, dark, exclude);
     DrawMenuBar(hwnd);
 
-    SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, (LONG_PTR)theme_data.bg_brush);
 
     RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
@@ -1569,10 +1568,61 @@ struct AttachOptions
 inline void set(Theme theme);
 
 /**
- * @brief Initializes dark mode support. Call this once at the start of your program, preferrably in `WinMain` before
- * creating any windows.
+ * @brief Options for `init`. Unspecified options default to true.
  */
-inline void init()
+struct InitOptions
+{
+    std::optional<bool> affect_messageboxes = std::nullopt;
+};
+
+namespace Internal
+{
+inline InitOptions init_options;
+inline HWINEVENTHOOK dialog_creation_hook = nullptr;
+inline UINT attach_dialog_message = 0;
+
+inline void attach_system_dialog(HWND hwnd);
+
+inline LRESULT CALLBACK dialog_attach_hook(int code, WPARAM wParam, LPARAM lParam)
+{
+    if (code >= 0)
+    {
+        const auto *message = reinterpret_cast<const CWPSTRUCT *>(lParam);
+        if (message->message == attach_dialog_message) attach_system_dialog(message->hwnd);
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+inline void CALLBACK dialog_creation_event(
+    HWINEVENTHOOK, DWORD event, HWND hwnd, LONG object_id, LONG child_id, DWORD, DWORD)
+{
+    if ((event != EVENT_OBJECT_CREATE && event != EVENT_OBJECT_SHOW) || !hwnd || object_id != OBJID_WINDOW ||
+        child_id != CHILDID_SELF)
+        return;
+
+    DWORD process_id = 0;
+    const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
+    if (!thread_id || process_id != GetCurrentProcessId()) return;
+
+    if (thread_id == GetCurrentThreadId())
+    {
+        attach_system_dialog(hwnd);
+        return;
+    }
+
+    const HHOOK hook = SetWindowsHookExW(WH_CALLWNDPROC, dialog_attach_hook, nullptr, thread_id);
+    if (!hook) return;
+    DWORD_PTR result = 0;
+    SendMessageTimeoutW(hwnd, attach_dialog_message, 0, 0, SMTO_ABORTIFHUNG | SMTO_BLOCK, 1000, &result);
+    UnhookWindowsHookEx(hook);
+}
+} // namespace Internal
+
+/**
+ * @brief Initializes dark mode support.
+ * @param options Options for automatic dialog attachment.
+ */
+inline void init(const InitOptions &options = {})
 {
     using namespace Internal;
 
@@ -1619,6 +1669,15 @@ inline void init()
     }
 
     WinDarkMode::set(theme);
+
+    init_options = options;
+    if (dark_mode_supported && options.affect_messageboxes.value_or(true))
+    {
+        attach_dialog_message = RegisterWindowMessageW(L"WinDarkMode.AttachSystemDialog");
+        if (attach_dialog_message)
+            dialog_creation_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, nullptr,
+                dialog_creation_event, GetCurrentProcessId(), 0, WINEVENT_OUTOFCONTEXT);
+    }
 }
 
 /**
@@ -1646,6 +1705,113 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
 
     update_window_theme(hwnd, dark, options.exclude);
 }
+
+namespace Internal
+{
+inline RECT messagebox_button_band(HWND hwnd)
+{
+    RECT band{};
+    GetClientRect(hwnd, &band);
+    LONG button_top = band.bottom;
+    LONG button_bottom = band.bottom;
+    for (HWND child = GetWindow(hwnd, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT))
+    {
+        WCHAR class_name[32]{};
+        GetClassNameW(child, class_name, 32);
+        if (!IsWindowVisible(child) || lstrcmpiW(class_name, L"Button") != 0) continue;
+        const auto type = GetWindowLongPtr(child, GWL_STYLE) & BS_TYPEMASK;
+        if (type != BS_PUSHBUTTON && type != BS_DEFPUSHBUTTON) continue;
+        RECT button{};
+        GetWindowRect(child, &button);
+        MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT *>(&button), 2);
+        button_top = (std::min)(button_top, button.top);
+        button_bottom = button.bottom;
+    }
+    band.top = (std::max)(0L, button_top - (band.bottom - button_bottom));
+    return band;
+}
+
+inline void paint_messagebox(HWND hwnd, HDC hdc, bool exclude_children = true)
+{
+    const int saved = SaveDC(hdc);
+    if (!saved) return;
+    for (HWND child = exclude_children ? GetWindow(hwnd, GW_CHILD) : nullptr; child;
+        child = GetWindow(child, GW_HWNDNEXT))
+    {
+        if (!IsWindowVisible(child)) continue;
+        RECT rc{};
+        GetWindowRect(child, &rc);
+        MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT *>(&rc), 2);
+        ExcludeClipRect(hdc, rc.left, rc.top, rc.right, rc.bottom);
+    }
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    FillRect(hdc, &client, theme_data.bg_brush);
+    const RECT band = messagebox_button_band(hwnd);
+    FillRect(hdc, &band, theme_data.tab_normal_brush);
+    RestoreDC(hdc, saved);
+}
+
+inline LRESULT CALLBACK messagebox_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR id, DWORD_PTR)
+{
+    if (msg == WM_NCDESTROY)
+        RemoveWindowSubclass(hwnd, messagebox_subclass_proc, id);
+    else if (is_dark() && !is_high_contrast())
+    {
+        switch (msg)
+        {
+        case WM_PAINT: {
+            PAINTSTRUCT ps{};
+            const HDC hdc = BeginPaint(hwnd, &ps);
+            if (hdc) paint_messagebox(hwnd, hdc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_PRINTCLIENT:
+        case WM_ERASEBKGND:
+            paint_messagebox(hwnd, reinterpret_cast<HDC>(wParam), false);
+            return TRUE;
+        case WM_CTLCOLORBTN:
+            SetTextColor(reinterpret_cast<HDC>(wParam), theme_data.text_1_color);
+            SetBkColor(reinterpret_cast<HDC>(wParam), theme_data.tab_normal_color);
+            return reinterpret_cast<LRESULT>(theme_data.tab_normal_brush);
+        default:
+            break;
+        }
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+inline void attach_system_dialog(HWND hwnd)
+{
+    if (attached_windows.contains(hwnd) || (GetWindowLongPtr(hwnd, GWL_STYLE) & WS_CHILD)) return;
+
+    WCHAR class_name[32] = {};
+    if (!GetClassNameW(hwnd, class_name, 32) || std::wstring(class_name) != L"#32770") return;
+
+    const auto dialog_proc = GetWindowLongPtrW(hwnd, DWLP_DLGPROC);
+    HMODULE module = nullptr;
+    if (!dialog_proc ||
+        !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(dialog_proc), &module))
+        return;
+
+    WCHAR path[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
+    if (!length || length >= MAX_PATH) return;
+    const std::wstring module_path(path, length);
+    const auto name = module_path.substr(module_path.find_last_of(L"\\/") + 1);
+    const bool messagebox = lstrcmpiW(name.c_str(), L"user32.dll") == 0;
+    if (messagebox && init_options.affect_messageboxes.value_or(true) && is_dark() && !is_high_contrast())
+    {
+        // HACK: MessageBoxes have this white band at the bottom drawn in their WM_PAINT which we need to override :/
+        WinDarkMode::attach(hwnd, {.is_dialog = true, .exclude = {}});
+        SetWindowSubclass(hwnd, messagebox_subclass_proc, 0, 0);
+        InvalidateRect(hwnd, nullptr, TRUE);
+    }
+}
+} // namespace Internal
 
 /**
  * @brief Sets the app theme.

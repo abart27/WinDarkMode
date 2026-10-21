@@ -83,3 +83,9 @@ int CALLBACK WinMain(const HINSTANCE hInstance, HINSTANCE, LPSTR, const int nSho
 ## Dialog Support
 
 WinDarkMode supports attaching to both top-level windows and dialogs out of the box.
+
+It also supports auto-attaching to `MessageBox`es, which is enabled by default and can be configured:
+
+```cpp
+WinDarkMode::init({.affect_messageboxes = false});
+```
