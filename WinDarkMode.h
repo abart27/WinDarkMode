@@ -135,6 +135,22 @@ enum class Theme
 };
 
 /**
+ * @brief Like `Theme`, but resolved to a specific theme.
+ */
+enum class EffectiveTheme
+{
+    /**
+     * @brief The light theme.
+     */
+    Light,
+
+    /**
+     * @brief The dark theme.
+     */
+    Dark
+};
+
+/**
  * @brief Internal stuff. Don't reference these.
  */
 namespace Internal
@@ -1533,6 +1549,15 @@ inline void set(Theme theme)
     {
         update_window_theme(hwnd, dark, exclude);
     }
+}
+
+/**
+ * @brief Gets the effective theme.
+ */
+inline EffectiveTheme effective_theme()
+{
+    using namespace Internal;
+    return is_dark() ? EffectiveTheme::Dark : EffectiveTheme::Light;
 }
 
 } // namespace WinDarkMode

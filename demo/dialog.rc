@@ -26,6 +26,7 @@ BEGIN
     AUTORADIOBUTTON "Light",                IDC_THEME_LIGHT,   10,  14,  42,  10, WS_GROUP | WS_TABSTOP
     AUTORADIOBUTTON "Dark",                 IDC_THEME_DARK,    58,  14,  42,  10
     AUTORADIOBUTTON "System (follow OS)",   IDC_THEME_SYSTEM, 106,  14,  92,  10
+    LTEXT           "",                     IDC_EFFECTIVE_THEME, 204, 14, 156, 10
 
     LTEXT           "Pushbutton:",          IDC_STATIC,         4,  34,  54,   8
     PUSHBUTTON      "Standard",             IDC_BUTTON1,        4,  44,  50,  14

@@ -39,9 +39,18 @@
 
 static HWND m_hwnd_status = nullptr;
 
-static void set_theme(WinDarkMode::Theme theme)
+static void refresh_effective_theme(HWND hwnd)
+{
+    const wchar_t *label = WinDarkMode::effective_theme() == WinDarkMode::EffectiveTheme::Dark
+                               ? L"Effective theme: Dark"
+                               : L"Effective theme: Light";
+    SetDlgItemTextW(hwnd, IDC_EFFECTIVE_THEME, label);
+}
+
+static void set_theme(HWND hwnd, WinDarkMode::Theme theme)
 {
     WinDarkMode::set(theme);
+    refresh_effective_theme(hwnd);
 
     const wchar_t *label = L"Theme: System";
     if (theme == WinDarkMode::Theme::Light)
@@ -234,9 +243,13 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         setup_treeview(hwnd);
 
         WinDarkMode::attach(hwnd, {.is_dialog = true, .exclude = {GetDlgItem(hwnd, IDC_BTN_EXCLUDED)}});
+        refresh_effective_theme(hwnd);
         reflow(hwnd);
         return TRUE;
     }
+    case WM_SETTINGCHANGE:
+        refresh_effective_theme(hwnd);
+        return FALSE;
     case WM_SIZE:
         reflow(hwnd);
         return FALSE;
@@ -244,13 +257,13 @@ static INT_PTR CALLBACK DlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         switch (LOWORD(wParam))
         {
         case IDC_THEME_LIGHT:
-            set_theme(WinDarkMode::Theme::Light);
+            set_theme(hwnd, WinDarkMode::Theme::Light);
             return TRUE;
         case IDC_THEME_DARK:
-            set_theme(WinDarkMode::Theme::Dark);
+            set_theme(hwnd, WinDarkMode::Theme::Dark);
             return TRUE;
         case IDC_THEME_SYSTEM:
-            set_theme(WinDarkMode::Theme::System);
+            set_theme(hwnd, WinDarkMode::Theme::System);
             return TRUE;
         case IDC_BUTTON1:
             MessageBoxW(hwnd,
