@@ -36,7 +36,7 @@ Based on [win32-darkmode](https://github.com/ysc3839/win32-darkmode) with variou
 | ✅ List View | ✅ Tree View |
 | ⬜ Month Calendar | ✅ Up-Down Control |
 | ⬜ Pager | ✅ Menu Bar |
-| ⬜ Progress Bar | ✅ Menu Item |
+| ✅ Progress Bar | ✅ Menu Item |
 
 </details>
 
