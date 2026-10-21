@@ -258,21 +258,6 @@ struct UAHDRAWMENUITEM
     UAHMENUITEM umi;
 };
 
-struct ListViewContext
-{
-    COLORREF hdr_text_color;
-};
-
-struct TabControlContext
-{
-    int hover = -1;
-};
-
-struct ButtonContext
-{
-    bool hot = false;
-};
-
 using fnRtlGetNtVersionNumbers = void(WINAPI *)(LPDWORD major, LPDWORD minor, LPDWORD build);
 using fnSetWindowCompositionAttribute = BOOL(WINAPI *)(HWND hWnd, WINDOWCOMPOSITIONATTRIBDATA *);
 
@@ -454,653 +439,138 @@ inline void patch_scrollbar(bool dark)
     FreeLibrary(comctl_mod);
 }
 
-inline LRESULT CALLBACK tabcontrol_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
+struct DefaultControlThemer
 {
-    auto ctx = reinterpret_cast<TabControlContext *>(dwRefData);
+    static void update(HWND hwnd, bool dark) { SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr); }
+};
 
-    switch (msg)
-    {
-    case WM_NCDESTROY: {
-        delete ctx;
-        RemoveWindowSubclass(hwnd, tabcontrol_subclass_proc, 0);
-        break;
-    }
-    case WM_MOUSEMOVE: {
-        TCHITTESTINFO hit_info{};
-        hit_info.pt.x = static_cast<short>(LOWORD(lParam));
-        hit_info.pt.y = static_cast<short>(HIWORD(lParam));
-        const int hover = TabCtrl_HitTest(hwnd, &hit_info);
-        if (ctx->hover == hover) return 0;
-
-        const int previous_hover = ctx->hover;
-        ctx->hover = hover;
-        TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, hwnd, 0};
-        TrackMouseEvent(&tme);
-
-        RECT rc{};
-        if (previous_hover >= 0 && TabCtrl_GetItemRect(hwnd, previous_hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
-        if (hover >= 0 && TabCtrl_GetItemRect(hwnd, hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
-        return 0;
-    }
-    case WM_MOUSELEAVE:
-        if (ctx->hover >= 0)
-        {
-            RECT rc{};
-            if (TabCtrl_GetItemRect(hwnd, ctx->hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
-            ctx->hover = -1;
-        }
-        return 0;
-    case WM_ERASEBKGND: {
-        if (!(GetWindowLongPtr(hwnd, GWL_STYLE) & TCS_OWNERDRAWFIXED)) break;
-
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-        FillRect(reinterpret_cast<HDC>(wParam), &rc, theme_data.bg_brush);
-        return TRUE;
-    }
-
-    case WM_PAINT: {
-        if (!(GetWindowLongPtr(hwnd, GWL_STYLE) & TCS_OWNERDRAWFIXED)) break;
-
-        PAINTSTRUCT ps{};
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        FillRect(hdc, &ps.rcPaint, theme_data.bg_brush);
-
-        const int nTabs = TabCtrl_GetItemCount(hwnd);
-        const int nSelTab = TabCtrl_GetCurSel(hwnd);
-
-        for (int i = 0; i < nTabs; i++)
-        {
-            RECT rc_item{};
-            TabCtrl_GetItemRect(hwnd, i, &rc_item);
-
-            RECT rcIntersect{};
-            if (!IntersectRect(&rcIntersect, &ps.rcPaint, &rc_item)) continue;
-
-            const bool selected = (i == nSelTab);
-            const bool hovered = (i == ctx->hover);
-            HBRUSH tab_brush = selected ? theme_data.tab_normal_brush : theme_data.bg_brush;
-            if (hovered && !selected) tab_brush = theme_data.tab_hover_brush;
-
-            HPEN tab_pen = CreatePen(PS_SOLID, 1, theme_data.tab_hover_color);
-            HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, tab_pen));
-            HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(hdc, tab_brush));
-            constexpr int corner_radius = 6;
-            RoundRect(hdc, rc_item.left, rc_item.top, rc_item.right, rc_item.bottom, corner_radius, corner_radius);
-
-            RECT bottom_rc = rc_item;
-            bottom_rc.top = bottom_rc.bottom - corner_radius;
-            FillRect(hdc, &bottom_rc, tab_brush);
-            MoveToEx(hdc, rc_item.left, rc_item.top + corner_radius / 2, nullptr);
-            LineTo(hdc, rc_item.left, rc_item.bottom);
-            MoveToEx(hdc, rc_item.right - 1, rc_item.top + corner_radius / 2, nullptr);
-            LineTo(hdc, rc_item.right - 1, rc_item.bottom);
-            MoveToEx(hdc, rc_item.left, rc_item.bottom - 1, nullptr);
-            LineTo(hdc, rc_item.right, rc_item.bottom - 1);
-
-            SelectObject(hdc, old_brush);
-            SelectObject(hdc, old_pen);
-            DeleteObject(tab_pen);
-
-            TCHAR label[256]{};
-            TCITEM tci{};
-            tci.mask = TCIF_TEXT;
-            tci.pszText = label;
-            tci.cchTextMax = static_cast<int>(std::size(label)) - 1;
-            TabCtrl_GetItem(hwnd, i, &tci);
-
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, theme_data.text_1_color);
-            HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
-            HFONT hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
-            DrawText(hdc, label, -1, &rc_item, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-            SelectObject(hdc, hOldFont);
-        }
-
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    default:
-        break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-inline LRESULT CALLBACK listbox_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR)
+struct HeaderThemer
 {
-    switch (msg)
-    {
-    case WM_NCDESTROY:
-        RemoveWindowSubclass(hwnd, listbox_subclass_proc, 0);
-        break;
+    static void update(HWND, bool) {}
+};
 
-    case WM_ERASEBKGND:
-        return TRUE;
-    case WM_PAINT:
-    case WM_PRINTCLIENT: {
-        PAINTSTRUCT ps{};
-        HDC target = msg == WM_PAINT ? BeginPaint(hwnd, &ps) : reinterpret_cast<HDC>(wParam);
-        RECT client{};
-        GetClientRect(hwnd, &client);
-        HDC buffer = CreateCompatibleDC(target);
-        HBITMAP bitmap = buffer ? CreateCompatibleBitmap(target, client.right, client.bottom) : nullptr;
-        HGDIOBJ old_bitmap = bitmap ? SelectObject(buffer, bitmap) : nullptr;
-        HDC hdc = bitmap ? buffer : target;
-        const int saved_dc = SaveDC(hdc);
-        IntersectClipRect(hdc, client.left, client.top, client.right, client.bottom);
-        FillRect(hdc, &client, theme_data.listbox_bg_brush);
-
-        const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
-        const bool multi_select = (style & (LBS_MULTIPLESEL | LBS_EXTENDEDSEL)) != 0;
-        const bool enabled = IsWindowEnabled(hwnd) != FALSE;
-        const bool focused = GetFocus() == hwnd;
-        const int count = static_cast<int>(SendMessage(hwnd, LB_GETCOUNT, 0, 0));
-        const int current = static_cast<int>(SendMessage(hwnd, LB_GETCURSEL, 0, 0));
-        const int caret = static_cast<int>(SendMessage(hwnd, LB_GETCARETINDEX, 0, 0));
-        const bool hide_focus = (SendMessage(hwnd, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS) != 0;
-        HFONT font = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
-        if (font) SelectObject(hdc, font);
-        SetBkMode(hdc, TRANSPARENT);
-
-        const int first = static_cast<int>(SendMessage(hwnd, LB_GETTOPINDEX, 0, 0));
-        for (int i = first; i >= 0 && i < count; ++i)
-        {
-            RECT rc{};
-            if (SendMessage(hwnd, LB_GETITEMRECT, i, reinterpret_cast<LPARAM>(&rc)) == LB_ERR) break;
-            if ((style & LBS_MULTICOLUMN) ? rc.left >= client.right : rc.top >= client.bottom) break;
-            RECT visible{};
-            if (!IntersectRect(&visible, &client, &rc)) continue;
-
-            const bool selected =
-                !(style & LBS_NOSEL) && (multi_select ? SendMessage(hwnd, LB_GETSEL, i, 0) > 0 : i == current);
-            FillRect(hdc, &rc, selected ? theme_data.tab_normal_brush : theme_data.listbox_bg_brush);
-            SetTextColor(hdc, enabled ? theme_data.text_1_color : theme_data.disabled_text_color);
-
-            const LRESULT length = SendMessage(hwnd, LB_GETTEXTLEN, i, 0);
-            if (length != LB_ERR)
-            {
-                std::basic_string<TCHAR> text(static_cast<size_t>(length) + 1, TEXT('\0'));
-                if (SendMessage(hwnd, LB_GETTEXT, i, reinterpret_cast<LPARAM>(text.data())) != LB_ERR)
-                {
-                    RECT text_rc = rc;
-                    text_rc.left += 2;
-                    DrawText(hdc, text.c_str(), -1, &text_rc,
-                        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
-                            ((style & LBS_USETABSTOPS) ? DT_EXPANDTABS : 0) |
-                            ((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_RTLREADING) ? DT_RTLREADING : 0));
-                }
-            }
-            if (focused && enabled && i == caret && !hide_focus) DrawFocusRect(hdc, &rc);
-        }
-
-        if (saved_dc) RestoreDC(hdc, saved_dc);
-        if (bitmap)
-        {
-            BitBlt(target, 0, 0, client.right, client.bottom, buffer, 0, 0, SRCCOPY);
-            SelectObject(buffer, old_bitmap);
-            DeleteObject(bitmap);
-        }
-        if (buffer) DeleteDC(buffer);
-        if (msg == WM_PAINT) EndPaint(hwnd, &ps);
-        return 0;
-    }
-    default:
-        break;
-    }
-
-    const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
-    if ((msg >= LB_ADDSTRING && msg <= LB_GETLISTBOXINFO) || msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP ||
-        msg == WM_LBUTTONDBLCLK || (msg == WM_MOUSEMOVE && GetCapture() == hwnd) || msg == WM_TIMER ||
-        msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_ENABLE ||
-        msg == WM_SETFONT || msg == WM_SIZE || msg == WM_HSCROLL || msg == WM_VSCROLL || msg == WM_MOUSEWHEEL ||
-        msg == WM_UPDATEUISTATE)
-    {
-        if (msg != LB_GETCOUNT && msg != LB_GETCURSEL && msg != LB_GETCARETINDEX && msg != LB_GETTOPINDEX &&
-            msg != LB_GETITEMRECT && msg != LB_GETSEL && msg != LB_GETTEXTLEN && msg != LB_GETTEXT)
-            InvalidateRect(hwnd, nullptr, FALSE);
-    }
-    return result;
-}
-
-inline LRESULT CALLBACK listview_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
+struct TabControlThemer
 {
-    auto info = reinterpret_cast<ListViewContext *>(dwRefData);
-
-    switch (msg)
+    struct Context
     {
-    case WM_NCDESTROY: {
-        delete info;
-        RemoveWindowSubclass(hwnd, listview_subclass_proc, 0);
-        break;
-    }
-    case WM_NOTIFY: {
-        if (reinterpret_cast<LPNMHDR>(lParam)->code == NM_CUSTOMDRAW)
+        int hover = -1;
+    };
+
+    static LRESULT CALLBACK subclass_proc(
+        HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
+    {
+        auto ctx = reinterpret_cast<Context *>(dwRefData);
+
+        switch (msg)
         {
-            LPNMCUSTOMDRAW nmcd = reinterpret_cast<LPNMCUSTOMDRAW>(lParam);
-            switch (nmcd->dwDrawStage)
-            {
-            case CDDS_PREPAINT:
-                return CDRF_NOTIFYITEMDRAW;
-            case CDDS_ITEMPREPAINT: {
-                SetTextColor(nmcd->hdc, info->hdr_text_color);
-                return CDRF_DODEFAULT;
-            }
-            }
+        case WM_NCDESTROY: {
+            delete ctx;
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
+            break;
         }
-        break;
-    }
-    default:
-        break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
+        case WM_MOUSEMOVE: {
+            TCHITTESTINFO hit_info{};
+            hit_info.pt.x = static_cast<short>(LOWORD(lParam));
+            hit_info.pt.y = static_cast<short>(HIWORD(lParam));
+            const int hover = TabCtrl_HitTest(hwnd, &hit_info);
+            if (ctx->hover == hover) return 0;
 
-inline LRESULT CALLBACK groupbox_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
-{
-    switch (msg)
-    {
-    case WM_NCDESTROY:
-        RemoveWindowSubclass(hwnd, groupbox_subclass_proc, sId);
-        break;
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps{};
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        RECT rc{};
-        GetClientRect(hwnd, &rc);
-
-        HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
-        HFONT hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
-
-        TEXTMETRIC tm{};
-        GetTextMetrics(hdc, &tm);
-        const int text_y_offset = tm.tmHeight / 2;
-
-        TCHAR label[256]{};
-        GetWindowText(hwnd, label, static_cast<int>(std::size(label)));
-
-        const int text_padding = 4;
-        SIZE text_size{};
-        GetTextExtentPoint32(hdc, label, lstrlen(label), &text_size);
-
-        FillRect(hdc, &rc, theme_data.bg_brush);
-
-        RECT frame_rc = rc;
-        frame_rc.top += text_y_offset;
-
-        HPEN hPen = CreatePen(PS_SOLID, 1, theme_data.groupbox_border_color);
-        HPEN hOldPen = static_cast<HPEN>(SelectObject(hdc, hPen));
-        HBRUSH hOldBrush = static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
-        Rectangle(hdc, frame_rc.left, frame_rc.top, frame_rc.right, frame_rc.bottom);
-        SelectObject(hdc, hOldPen);
-        SelectObject(hdc, hOldBrush);
-        DeleteObject(hPen);
-
-        if (label[0])
-        {
-            const int text_x = rc.left + 9;
-            RECT clear_rc = {text_x - text_padding, rc.top, text_x + text_size.cx + text_padding, rc.top + tm.tmHeight};
-            FillRect(hdc, &clear_rc, theme_data.bg_brush);
-
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, theme_data.text_1_color);
-            RECT text_rc = {text_x, rc.top, text_x + text_size.cx, rc.top + tm.tmHeight};
-            DrawText(hdc, label, -1, &text_rc, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-        }
-
-        SelectObject(hdc, hOldFont);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-
-    default:
-        break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-inline LRESULT CALLBACK button_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR dwRefData)
-{
-    auto *ctx = reinterpret_cast<ButtonContext *>(dwRefData);
-    switch (msg)
-    {
-    case WM_NCDESTROY:
-        RemoveWindowSubclass(hwnd, button_subclass_proc, sId);
-        delete ctx;
-        break;
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_MOUSEMOVE:
-        if (!ctx->hot)
-        {
-            ctx->hot = true;
+            const int previous_hover = ctx->hover;
+            ctx->hover = hover;
             TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, hwnd, 0};
             TrackMouseEvent(&tme);
-            InvalidateRect(hwnd, nullptr, FALSE);
+
+            RECT rc{};
+            if (previous_hover >= 0 && TabCtrl_GetItemRect(hwnd, previous_hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
+            if (hover >= 0 && TabCtrl_GetItemRect(hwnd, hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
+            return 0;
         }
-        break;
-    case WM_MOUSELEAVE:
-        ctx->hot = false;
-        InvalidateRect(hwnd, nullptr, FALSE);
-        break;
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        const HDC hdc = BeginPaint(hwnd, &ps);
-
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-
-        FillRect(hdc, &rc, theme_data.bg_brush);
-
-        const auto btn_style = GetWindowLongPtr(hwnd, GWL_STYLE) & 0xFL;
-        const bool is_radio = (btn_style == BS_RADIOBUTTON || btn_style == BS_AUTORADIOBUTTON);
-        const int part = is_radio ? BP_RADIOBUTTON : BP_CHECKBOX;
-
-        const LRESULT check_state = SendMessage(hwnd, BM_GETCHECK, 0, 0);
-        const bool enabled = IsWindowEnabled(hwnd) != 0;
-
-        int state;
-        if (is_radio)
-        {
-            if (!enabled)
-                state = check_state == BST_CHECKED ? RBS_CHECKEDDISABLED : RBS_UNCHECKEDDISABLED;
-            else if (ctx->hot)
-                state = check_state == BST_CHECKED ? RBS_CHECKEDHOT : RBS_UNCHECKEDHOT;
-            else
-                state = check_state == BST_CHECKED ? RBS_CHECKEDNORMAL : RBS_UNCHECKEDNORMAL;
-        }
-        else
-        {
-            if (!enabled)
-                state = check_state == BST_CHECKED         ? CBS_CHECKEDDISABLED
-                        : check_state == BST_INDETERMINATE ? CBS_MIXEDDISABLED
-                                                           : CBS_UNCHECKEDDISABLED;
-            else if (ctx->hot)
-                state = check_state == BST_CHECKED         ? CBS_CHECKEDHOT
-                        : check_state == BST_INDETERMINATE ? CBS_MIXEDHOT
-                                                           : CBS_UNCHECKEDHOT;
-            else
-                state = check_state == BST_CHECKED         ? CBS_CHECKEDNORMAL
-                        : check_state == BST_INDETERMINATE ? CBS_MIXEDNORMAL
-                                                           : CBS_UNCHECKEDNORMAL;
-        }
-
-        HTHEME hTheme = OpenThemeData(hwnd, L"BUTTON");
-        SIZE glyph_size = {GetSystemMetrics(SM_CYMENUCHECK), GetSystemMetrics(SM_CYMENUCHECK)};
-
-        if (hTheme)
-        {
-            SIZE sz = {};
-            if (SUCCEEDED(GetThemePartSize(hTheme, hdc, part, state, nullptr, TS_DRAW, &sz))) glyph_size = sz;
-
-            const int gy = rc.top + (rc.bottom - rc.top - glyph_size.cy) / 2;
-            const RECT glyph_rc = {rc.left, gy, rc.left + glyph_size.cx, gy + glyph_size.cy};
-            DrawThemeBackground(hTheme, hdc, part, state, &glyph_rc, nullptr);
-            CloseThemeData(hTheme);
-        }
-
-        TCHAR label[256] = {};
-        GetWindowText(hwnd, label, _countof(label));
-        if (label[0])
-        {
-            const RECT text_rc = {rc.left + glyph_size.cx + 4, rc.top, rc.right, rc.bottom};
-            const HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
-            const HFONT hOldFont = hFont ? reinterpret_cast<HFONT>(SelectObject(hdc, hFont)) : nullptr;
-            SetTextColor(hdc, enabled ? theme_data.text_1_color : theme_data.disabled_text_color);
-            SetBkMode(hdc, TRANSPARENT);
-            DrawText(hdc, label, -1, const_cast<LPRECT>(&text_rc), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            if (hOldFont) SelectObject(hdc, hOldFont);
-        }
-
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    default:
-        break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-inline LRESULT CALLBACK statusbar_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
-{
-    switch (msg)
-    {
-    case WM_NCDESTROY:
-        RemoveWindowSubclass(hwnd, statusbar_subclass_proc, sId);
-        break;
-    case WM_ERASEBKGND:
-        return TRUE;
-    case WM_PAINT: {
-        PAINTSTRUCT ps{};
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        RECT rc_client{};
-        GetClientRect(hwnd, &rc_client);
-
-        FillRect(hdc, &rc_client, theme_data.bg_brush);
-
-        const int part_count = static_cast<int>(SendMessage(hwnd, SB_GETPARTS, 0, 0));
-
-        int borders[3]{};
-        SendMessage(hwnd, SB_GETBORDERS, 0, reinterpret_cast<LPARAM>(borders));
-
-        HPEN divider_pen = CreatePen(PS_SOLID, 1, theme_data.statusbar_divider_color);
-        HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, divider_pen));
-
-        HFONT h_font = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
-        HFONT h_old_font = static_cast<HFONT>(SelectObject(hdc, h_font));
-
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, theme_data.text_1_color);
-
-        HPEN sep_pen = CreatePen(PS_SOLID, 1, theme_data.statusbar_border_color);
-        HPEN tmp_pen = static_cast<HPEN>(SelectObject(hdc, sep_pen));
-        MoveToEx(hdc, rc_client.left, rc_client.top, nullptr);
-        LineTo(hdc, rc_client.right, rc_client.top);
-        SelectObject(hdc, tmp_pen);
-        DeleteObject(sep_pen);
-
-        for (int i = 0; i < part_count; ++i)
-        {
-            RECT rc_part{};
-            SendMessage(hwnd, SB_GETRECT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(&rc_part));
-
-            RECT rc_intersect{};
-            if (!IntersectRect(&rc_intersect, &ps.rcPaint, &rc_part)) continue;
-
-            FillRect(hdc, &rc_part, theme_data.bg_brush);
-
-            const bool is_last_part = (i == part_count - 1);
-            if (!is_last_part)
+        case WM_MOUSELEAVE:
+            if (ctx->hover >= 0)
             {
-                SelectObject(hdc, divider_pen);
-                MoveToEx(hdc, rc_part.right - 1, rc_part.top + 2, nullptr);
-                LineTo(hdc, rc_part.right - 1, rc_part.bottom - 2);
+                RECT rc{};
+                if (TabCtrl_GetItemRect(hwnd, ctx->hover, &rc)) InvalidateRect(hwnd, &rc, FALSE);
+                ctx->hover = -1;
+            }
+            return 0;
+        case WM_ERASEBKGND: {
+            if (!(GetWindowLongPtr(hwnd, GWL_STYLE) & TCS_OWNERDRAWFIXED)) break;
+
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            FillRect(reinterpret_cast<HDC>(wParam), &rc, theme_data.bg_brush);
+            return TRUE;
+        }
+
+        case WM_PAINT: {
+            if (!(GetWindowLongPtr(hwnd, GWL_STYLE) & TCS_OWNERDRAWFIXED)) break;
+
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            FillRect(hdc, &ps.rcPaint, theme_data.bg_brush);
+
+            const int nTabs = TabCtrl_GetItemCount(hwnd);
+            const int nSelTab = TabCtrl_GetCurSel(hwnd);
+
+            for (int i = 0; i < nTabs; i++)
+            {
+                RECT rc_item{};
+                TabCtrl_GetItemRect(hwnd, i, &rc_item);
+
+                RECT rcIntersect{};
+                if (!IntersectRect(&rcIntersect, &ps.rcPaint, &rc_item)) continue;
+
+                const bool selected = (i == nSelTab);
+                const bool hovered = (i == ctx->hover);
+                HBRUSH tab_brush = selected ? theme_data.tab_normal_brush : theme_data.bg_brush;
+                if (hovered && !selected) tab_brush = theme_data.tab_hover_brush;
+
+                HPEN tab_pen = CreatePen(PS_SOLID, 1, theme_data.tab_hover_color);
+                HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, tab_pen));
+                HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(hdc, tab_brush));
+                constexpr int corner_radius = 6;
+                RoundRect(hdc, rc_item.left, rc_item.top, rc_item.right, rc_item.bottom, corner_radius, corner_radius);
+
+                RECT bottom_rc = rc_item;
+                bottom_rc.top = bottom_rc.bottom - corner_radius;
+                FillRect(hdc, &bottom_rc, tab_brush);
+                MoveToEx(hdc, rc_item.left, rc_item.top + corner_radius / 2, nullptr);
+                LineTo(hdc, rc_item.left, rc_item.bottom);
+                MoveToEx(hdc, rc_item.right - 1, rc_item.top + corner_radius / 2, nullptr);
+                LineTo(hdc, rc_item.right - 1, rc_item.bottom);
+                MoveToEx(hdc, rc_item.left, rc_item.bottom - 1, nullptr);
+                LineTo(hdc, rc_item.right, rc_item.bottom - 1);
+
+                SelectObject(hdc, old_brush);
+                SelectObject(hdc, old_pen);
+                DeleteObject(tab_pen);
+
+                TCHAR label[256]{};
+                TCITEM tci{};
+                tci.mask = TCIF_TEXT;
+                tci.pszText = label;
+                tci.cchTextMax = static_cast<int>(std::size(label)) - 1;
+                TabCtrl_GetItem(hwnd, i, &tci);
+
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, theme_data.text_1_color);
+                HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+                HFONT hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
+                DrawText(hdc, label, -1, &rc_item, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                SelectObject(hdc, hOldFont);
             }
 
-            HICON h_icon = reinterpret_cast<HICON>(SendMessage(hwnd, SB_GETICON, static_cast<WPARAM>(i), 0));
-
-            RECT rc_text = rc_part;
-            rc_text.left += borders[0];
-
-            if (h_icon)
-            {
-                const int icon_size = GetSystemMetrics(SM_CYSMICON);
-                const int icon_y = rc_part.top + (rc_part.bottom - rc_part.top - icon_size) / 2;
-                DrawIconEx(hdc, rc_text.left, icon_y, h_icon, icon_size, icon_size, 0, nullptr, DI_NORMAL);
-                rc_text.left += icon_size + borders[2];
-            }
-
-            const LRESULT text_info = SendMessage(hwnd, SB_GETTEXTLENGTH, static_cast<WPARAM>(i), 0);
-            const int text_len = LOWORD(text_info);
-
-            if (text_len > 0)
-            {
-                std::basic_string<TCHAR> text(static_cast<size_t>(text_len) + 1, TEXT('\0'));
-                SendMessage(hwnd, SB_GETTEXT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(text.data()));
-                text.resize(static_cast<size_t>(text_len));
-
-                rc_text.right -= borders[0];
-                DrawText(hdc, text.c_str(), static_cast<int>(text.size()), &rc_text,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
-            }
+            EndPaint(hwnd, &ps);
+            return 0;
         }
-
-        const auto bar_style = GetWindowLongPtr(hwnd, GWL_STYLE);
-        if (bar_style & SBARS_SIZEGRIP)
-        {
-            constexpr int DOT = 2;
-            constexpr int GAP = 2;
-            constexpr int ROWS = 3;
-            HBRUSH dot_brush = CreateSolidBrush(theme_data.statusbar_grip_color);
-
-            const int base_x = rc_client.right - 2;
-            const int base_y = rc_client.bottom - 2;
-
-            for (int row = 0; row < ROWS; ++row)
-            {
-                for (int col = 0; col <= row; ++col)
-                {
-                    const int x = base_x - col * (DOT + GAP) - DOT;
-                    const int y = base_y - row * (DOT + GAP) - DOT;
-                    RECT dot_rc = {x, y, x + DOT, y + DOT};
-                    FillRect(hdc, &dot_rc, dot_brush);
-                }
-            }
-
-            DeleteObject(dot_brush);
+        default:
+            break;
         }
-
-        SelectObject(hdc, h_old_font);
-        SelectObject(hdc, old_pen);
-        DeleteObject(divider_pen);
-        EndPaint(hwnd, &ps);
-        return 0;
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    default:
-        break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-inline void update_listview(HWND lv_hwnd, bool dark)
-{
-    HWND hdr_hwnd = ListView_GetHeader(lv_hwnd);
-    _AllowDarkModeForWindow(hdr_hwnd, dark);
-
-    DWORD_PTR old_data = 0;
-    if (GetWindowSubclass(lv_hwnd, listview_subclass_proc, 0, &old_data))
-        delete reinterpret_cast<ListViewContext *>(old_data);
-
-    ListViewContext *ctx = nullptr;
-    if (dark)
-    {
-        ctx = new ListViewContext{};
-        SetWindowSubclass(lv_hwnd, listview_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(ctx));
-
-        // FIXME: We force grid lines off because they look absolutely brutal in dark mode. Maybe we can override them?
-        const auto ex_style = ListView_GetExtendedListViewStyle(lv_hwnd);
-        ListView_SetExtendedListViewStyle(lv_hwnd, ex_style & ~LVS_EX_GRIDLINES);
-
-        // FIXME: Hide focus rectangle because it's white :/ Would be nice to override it instead.
-        SendMessage(lv_hwnd, WM_CHANGEUISTATE, MAKELONG(UIS_SET, UISF_HIDEFOCUS), 0);
-
-        SetWindowTheme(hdr_hwnd, L"ItemsView", L"Header");
-        SetWindowTheme(lv_hwnd, L"ItemsView", 0);
-    }
-    else
-    {
-        RemoveWindowSubclass(lv_hwnd, listview_subclass_proc, 0);
-        SetWindowTheme(hdr_hwnd, nullptr, nullptr);
-        SetWindowTheme(lv_hwnd, nullptr, nullptr);
-    }
-
-    HTHEME hTheme = OpenThemeData(nullptr, L"ItemsView");
-    if (hTheme)
-    {
-        COLORREF color;
-        if (SUCCEEDED(GetThemeColor(hTheme, 0, 0, TMT_TEXTCOLOR, &color))) ListView_SetTextColor(lv_hwnd, color);
-        if (SUCCEEDED(GetThemeColor(hTheme, 0, 0, TMT_FILLCOLOR, &color)))
-        {
-            ListView_SetTextBkColor(lv_hwnd, color);
-            ListView_SetBkColor(lv_hwnd, color);
-        }
-        CloseThemeData(hTheme);
-    }
-
-    if (ctx)
-    {
-        hTheme = OpenThemeData(hdr_hwnd, L"Header");
-        if (hTheme)
-        {
-            GetThemeColor(hTheme, HP_HEADERITEM, 0, TMT_TEXTCOLOR, &(ctx->hdr_text_color));
-            CloseThemeData(hTheme);
-        }
-    }
-}
-
-inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
-{
-    TCHAR cls[32]{};
-    GetClassName(hwnd, cls, std::size(cls));
-    std::basic_string<TCHAR> class_name(cls);
-
-    if (std::find(exclude.begin(), exclude.end(), hwnd) != exclude.end()) return;
-
-    _AllowDarkModeForWindow(hwnd, dark);
-
-    // Don't touch the header, it's handled in InitListView.
-    // FIXME: Can standalone header controls exist? If so, this will break them.
-    if (class_name == WC_HEADER) return;
-
-    if (class_name == WC_LISTVIEW)
-    {
-        update_listview(hwnd, dark);
-        return;
-    }
-
-    if (class_name == WC_LISTBOX)
-    {
-        const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
-        if (style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE | LBS_NODATA)) return;
-
-        constexpr LONG_PTR edge_mask = WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
-        const auto ex_style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-        DWORD_PTR original_frame = 0;
-        const bool subclassed = GetWindowSubclass(hwnd, listbox_subclass_proc, 0, &original_frame) != FALSE;
-        SetWindowTheme(hwnd, dark ? L"DarkMode_Explorer" : nullptr, nullptr);
-        if (dark)
-        {
-            if (!subclassed)
-            {
-                original_frame = static_cast<DWORD_PTR>((style & WS_BORDER) | (ex_style & edge_mask));
-                if (!SetWindowSubclass(hwnd, listbox_subclass_proc, 0, original_frame)) return;
-            }
-            SetWindowLongPtr(hwnd, GWL_STYLE, style & ~static_cast<LONG_PTR>(WS_BORDER));
-            SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_style & ~edge_mask);
-        }
-        else if (subclassed)
-        {
-            RemoveWindowSubclass(hwnd, listbox_subclass_proc, 0);
-            SetWindowLongPtr(
-                hwnd, GWL_STYLE, (style & ~static_cast<LONG_PTR>(WS_BORDER)) | (original_frame & WS_BORDER));
-            SetWindowLongPtr(hwnd, GWL_EXSTYLE, (ex_style & ~edge_mask) | (original_frame & edge_mask));
-        }
-        SetWindowPos(
-            hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
-        return;
-    }
-
-    if (class_name == WC_TABCONTROL)
+    static void update(HWND hwnd, bool dark)
     {
         SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr);
 
@@ -1125,31 +595,444 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
         }
 
         DWORD_PTR old_data = 0;
-        if (GetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, &old_data))
+        if (GetWindowSubclass(hwnd, subclass_proc, 0, &old_data))
         {
-            RemoveWindowSubclass(hwnd, tabcontrol_subclass_proc, 0);
-            delete reinterpret_cast<TabControlContext *>(old_data);
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
+            delete reinterpret_cast<Context *>(old_data);
         }
 
         if (dark)
         {
-            auto *ctx = new TabControlContext{};
-            if (!SetWindowSubclass(hwnd, tabcontrol_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(ctx))) delete ctx;
+            auto *ctx = new Context{};
+            if (!SetWindowSubclass(hwnd, subclass_proc, 0, reinterpret_cast<DWORD_PTR>(ctx))) delete ctx;
         }
 
         InvalidateRect(hwnd, nullptr, TRUE);
-        return;
+    }
+};
+
+struct ListBoxThemer
+{
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR)
+    {
+        switch (msg)
+        {
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
+            break;
+
+        case WM_ERASEBKGND:
+            return TRUE;
+        case WM_PAINT:
+        case WM_PRINTCLIENT: {
+            PAINTSTRUCT ps{};
+            HDC target = msg == WM_PAINT ? BeginPaint(hwnd, &ps) : reinterpret_cast<HDC>(wParam);
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            HDC buffer = CreateCompatibleDC(target);
+            HBITMAP bitmap = buffer ? CreateCompatibleBitmap(target, client.right, client.bottom) : nullptr;
+            HGDIOBJ old_bitmap = bitmap ? SelectObject(buffer, bitmap) : nullptr;
+            HDC hdc = bitmap ? buffer : target;
+            const int saved_dc = SaveDC(hdc);
+            IntersectClipRect(hdc, client.left, client.top, client.right, client.bottom);
+            FillRect(hdc, &client, theme_data.listbox_bg_brush);
+
+            const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
+            const bool multi_select = (style & (LBS_MULTIPLESEL | LBS_EXTENDEDSEL)) != 0;
+            const bool enabled = IsWindowEnabled(hwnd) != FALSE;
+            const bool focused = GetFocus() == hwnd;
+            const int count = static_cast<int>(SendMessage(hwnd, LB_GETCOUNT, 0, 0));
+            const int current = static_cast<int>(SendMessage(hwnd, LB_GETCURSEL, 0, 0));
+            const int caret = static_cast<int>(SendMessage(hwnd, LB_GETCARETINDEX, 0, 0));
+            const bool hide_focus = (SendMessage(hwnd, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS) != 0;
+            HFONT font = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+            if (font) SelectObject(hdc, font);
+            SetBkMode(hdc, TRANSPARENT);
+
+            const int first = static_cast<int>(SendMessage(hwnd, LB_GETTOPINDEX, 0, 0));
+            for (int i = first; i >= 0 && i < count; ++i)
+            {
+                RECT rc{};
+                if (SendMessage(hwnd, LB_GETITEMRECT, i, reinterpret_cast<LPARAM>(&rc)) == LB_ERR) break;
+                if ((style & LBS_MULTICOLUMN) ? rc.left >= client.right : rc.top >= client.bottom) break;
+                RECT visible{};
+                if (!IntersectRect(&visible, &client, &rc)) continue;
+
+                const bool selected =
+                    !(style & LBS_NOSEL) && (multi_select ? SendMessage(hwnd, LB_GETSEL, i, 0) > 0 : i == current);
+                FillRect(hdc, &rc, selected ? theme_data.tab_normal_brush : theme_data.listbox_bg_brush);
+                SetTextColor(hdc, enabled ? theme_data.text_1_color : theme_data.disabled_text_color);
+
+                const LRESULT length = SendMessage(hwnd, LB_GETTEXTLEN, i, 0);
+                if (length != LB_ERR)
+                {
+                    std::basic_string<TCHAR> text(static_cast<size_t>(length) + 1, TEXT('\0'));
+                    if (SendMessage(hwnd, LB_GETTEXT, i, reinterpret_cast<LPARAM>(text.data())) != LB_ERR)
+                    {
+                        RECT text_rc = rc;
+                        text_rc.left += 2;
+                        DrawText(hdc, text.c_str(), -1, &text_rc,
+                            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX |
+                                ((style & LBS_USETABSTOPS) ? DT_EXPANDTABS : 0) |
+                                ((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_RTLREADING) ? DT_RTLREADING : 0));
+                    }
+                }
+                if (focused && enabled && i == caret && !hide_focus) DrawFocusRect(hdc, &rc);
+            }
+
+            if (saved_dc) RestoreDC(hdc, saved_dc);
+            if (bitmap)
+            {
+                BitBlt(target, 0, 0, client.right, client.bottom, buffer, 0, 0, SRCCOPY);
+                SelectObject(buffer, old_bitmap);
+                DeleteObject(bitmap);
+            }
+            if (buffer) DeleteDC(buffer);
+            if (msg == WM_PAINT) EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            break;
+        }
+
+        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+        if ((msg >= LB_ADDSTRING && msg <= LB_GETLISTBOXINFO) || msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP ||
+            msg == WM_LBUTTONDBLCLK || (msg == WM_MOUSEMOVE && GetCapture() == hwnd) || msg == WM_TIMER ||
+            msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_ENABLE ||
+            msg == WM_SETFONT || msg == WM_SIZE || msg == WM_HSCROLL || msg == WM_VSCROLL || msg == WM_MOUSEWHEEL ||
+            msg == WM_UPDATEUISTATE)
+        {
+            if (msg != LB_GETCOUNT && msg != LB_GETCURSEL && msg != LB_GETCARETINDEX && msg != LB_GETTOPINDEX &&
+                msg != LB_GETITEMRECT && msg != LB_GETSEL && msg != LB_GETTEXTLEN && msg != LB_GETTEXT)
+                InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return result;
     }
 
-    if (class_name == WC_BUTTON)
+    static void update(HWND hwnd, bool dark)
+    {
+        const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        if (style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE | LBS_NODATA)) return;
+
+        constexpr LONG_PTR edge_mask = WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
+        const auto ex_style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        DWORD_PTR original_frame = 0;
+        const bool subclassed = GetWindowSubclass(hwnd, subclass_proc, 0, &original_frame) != FALSE;
+        SetWindowTheme(hwnd, dark ? L"DarkMode_Explorer" : nullptr, nullptr);
+        if (dark)
+        {
+            if (!subclassed)
+            {
+                original_frame = static_cast<DWORD_PTR>((style & WS_BORDER) | (ex_style & edge_mask));
+                if (!SetWindowSubclass(hwnd, subclass_proc, 0, original_frame)) return;
+            }
+            SetWindowLongPtr(hwnd, GWL_STYLE, style & ~static_cast<LONG_PTR>(WS_BORDER));
+            SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_style & ~edge_mask);
+        }
+        else if (subclassed)
+        {
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
+            SetWindowLongPtr(
+                hwnd, GWL_STYLE, (style & ~static_cast<LONG_PTR>(WS_BORDER)) | (original_frame & WS_BORDER));
+            SetWindowLongPtr(hwnd, GWL_EXSTYLE, (ex_style & ~edge_mask) | (original_frame & edge_mask));
+        }
+        SetWindowPos(
+            hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
+    }
+};
+
+struct ListViewThemer
+{
+    struct Context
+    {
+        COLORREF hdr_text_color;
+    };
+
+    static LRESULT CALLBACK subclass_proc(
+        HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR dwRefData)
+    {
+        auto info = reinterpret_cast<Context *>(dwRefData);
+
+        switch (msg)
+        {
+        case WM_NCDESTROY: {
+            delete info;
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
+            break;
+        }
+        case WM_NOTIFY: {
+            if (reinterpret_cast<LPNMHDR>(lParam)->code == NM_CUSTOMDRAW)
+            {
+                LPNMCUSTOMDRAW nmcd = reinterpret_cast<LPNMCUSTOMDRAW>(lParam);
+                switch (nmcd->dwDrawStage)
+                {
+                case CDDS_PREPAINT:
+                    return CDRF_NOTIFYITEMDRAW;
+                case CDDS_ITEMPREPAINT: {
+                    SetTextColor(nmcd->hdc, info->hdr_text_color);
+                    return CDRF_DODEFAULT;
+                }
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    static void update(HWND lv_hwnd, bool dark)
+    {
+        HWND hdr_hwnd = ListView_GetHeader(lv_hwnd);
+        _AllowDarkModeForWindow(hdr_hwnd, dark);
+
+        DWORD_PTR old_data = 0;
+        if (GetWindowSubclass(lv_hwnd, subclass_proc, 0, &old_data)) delete reinterpret_cast<Context *>(old_data);
+
+        Context *ctx = nullptr;
+        if (dark)
+        {
+            ctx = new Context{};
+            SetWindowSubclass(lv_hwnd, subclass_proc, 0, reinterpret_cast<DWORD_PTR>(ctx));
+
+            // FIXME: We force grid lines off because they look absolutely brutal in dark mode. Maybe we can override
+            // them?
+            const auto ex_style = ListView_GetExtendedListViewStyle(lv_hwnd);
+            ListView_SetExtendedListViewStyle(lv_hwnd, ex_style & ~LVS_EX_GRIDLINES);
+
+            // FIXME: Hide focus rectangle because it's white :/ Would be nice to override it instead.
+            SendMessage(lv_hwnd, WM_CHANGEUISTATE, MAKELONG(UIS_SET, UISF_HIDEFOCUS), 0);
+
+            SetWindowTheme(hdr_hwnd, L"ItemsView", L"Header");
+            SetWindowTheme(lv_hwnd, L"ItemsView", 0);
+        }
+        else
+        {
+            RemoveWindowSubclass(lv_hwnd, subclass_proc, 0);
+            SetWindowTheme(hdr_hwnd, nullptr, nullptr);
+            SetWindowTheme(lv_hwnd, nullptr, nullptr);
+        }
+
+        HTHEME hTheme = OpenThemeData(nullptr, L"ItemsView");
+        if (hTheme)
+        {
+            COLORREF color;
+            if (SUCCEEDED(GetThemeColor(hTheme, 0, 0, TMT_TEXTCOLOR, &color))) ListView_SetTextColor(lv_hwnd, color);
+            if (SUCCEEDED(GetThemeColor(hTheme, 0, 0, TMT_FILLCOLOR, &color)))
+            {
+                ListView_SetTextBkColor(lv_hwnd, color);
+                ListView_SetBkColor(lv_hwnd, color);
+            }
+            CloseThemeData(hTheme);
+        }
+
+        if (ctx)
+        {
+            hTheme = OpenThemeData(hdr_hwnd, L"Header");
+            if (hTheme)
+            {
+                GetThemeColor(hTheme, HP_HEADERITEM, 0, TMT_TEXTCOLOR, &(ctx->hdr_text_color));
+                CloseThemeData(hTheme);
+            }
+        }
+    }
+};
+
+struct GroupBoxThemer
+{
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
+    {
+        switch (msg)
+        {
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(hwnd, subclass_proc, sId);
+            break;
+
+        case WM_PAINT: {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+
+            HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+            HFONT hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
+
+            TEXTMETRIC tm{};
+            GetTextMetrics(hdc, &tm);
+            const int text_y_offset = tm.tmHeight / 2;
+
+            TCHAR label[256]{};
+            GetWindowText(hwnd, label, static_cast<int>(std::size(label)));
+
+            const int text_padding = 4;
+            SIZE text_size{};
+            GetTextExtentPoint32(hdc, label, lstrlen(label), &text_size);
+
+            FillRect(hdc, &rc, theme_data.bg_brush);
+
+            RECT frame_rc = rc;
+            frame_rc.top += text_y_offset;
+
+            HPEN hPen = CreatePen(PS_SOLID, 1, theme_data.groupbox_border_color);
+            HPEN hOldPen = static_cast<HPEN>(SelectObject(hdc, hPen));
+            HBRUSH hOldBrush = static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
+            Rectangle(hdc, frame_rc.left, frame_rc.top, frame_rc.right, frame_rc.bottom);
+            SelectObject(hdc, hOldPen);
+            SelectObject(hdc, hOldBrush);
+            DeleteObject(hPen);
+
+            if (label[0])
+            {
+                const int text_x = rc.left + 9;
+                RECT clear_rc = {
+                    text_x - text_padding, rc.top, text_x + text_size.cx + text_padding, rc.top + tm.tmHeight};
+                FillRect(hdc, &clear_rc, theme_data.bg_brush);
+
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, theme_data.text_1_color);
+                RECT text_rc = {text_x, rc.top, text_x + text_size.cx, rc.top + tm.tmHeight};
+                DrawText(hdc, label, -1, &text_rc, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+            }
+
+            SelectObject(hdc, hOldFont);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
+        default:
+            break;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    static void update(HWND hwnd, bool dark)
+    {
+        if (dark)
+            SetWindowSubclass(hwnd, subclass_proc, 0, 0);
+        else
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
+    }
+};
+
+struct ButtonThemer
+{
+    struct Context
+    {
+        bool hot = false;
+    };
+
+    static LRESULT CALLBACK subclass_proc(
+        HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR dwRefData)
+    {
+        auto *ctx = reinterpret_cast<Context *>(dwRefData);
+        switch (msg)
+        {
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(hwnd, subclass_proc, sId);
+            delete ctx;
+            break;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_MOUSEMOVE:
+            if (!ctx->hot)
+            {
+                ctx->hot = true;
+                TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, hwnd, 0};
+                TrackMouseEvent(&tme);
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            break;
+        case WM_MOUSELEAVE:
+            ctx->hot = false;
+            InvalidateRect(hwnd, nullptr, FALSE);
+            break;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            const HDC hdc = BeginPaint(hwnd, &ps);
+
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+
+            FillRect(hdc, &rc, theme_data.bg_brush);
+
+            const auto btn_style = GetWindowLongPtr(hwnd, GWL_STYLE) & 0xFL;
+            const bool is_radio = (btn_style == BS_RADIOBUTTON || btn_style == BS_AUTORADIOBUTTON);
+            const int part = is_radio ? BP_RADIOBUTTON : BP_CHECKBOX;
+
+            const LRESULT check_state = SendMessage(hwnd, BM_GETCHECK, 0, 0);
+            const bool enabled = IsWindowEnabled(hwnd) != 0;
+
+            int state;
+            if (is_radio)
+            {
+                if (!enabled)
+                    state = check_state == BST_CHECKED ? RBS_CHECKEDDISABLED : RBS_UNCHECKEDDISABLED;
+                else if (ctx->hot)
+                    state = check_state == BST_CHECKED ? RBS_CHECKEDHOT : RBS_UNCHECKEDHOT;
+                else
+                    state = check_state == BST_CHECKED ? RBS_CHECKEDNORMAL : RBS_UNCHECKEDNORMAL;
+            }
+            else
+            {
+                if (!enabled)
+                    state = check_state == BST_CHECKED         ? CBS_CHECKEDDISABLED
+                            : check_state == BST_INDETERMINATE ? CBS_MIXEDDISABLED
+                                                               : CBS_UNCHECKEDDISABLED;
+                else if (ctx->hot)
+                    state = check_state == BST_CHECKED         ? CBS_CHECKEDHOT
+                            : check_state == BST_INDETERMINATE ? CBS_MIXEDHOT
+                                                               : CBS_UNCHECKEDHOT;
+                else
+                    state = check_state == BST_CHECKED         ? CBS_CHECKEDNORMAL
+                            : check_state == BST_INDETERMINATE ? CBS_MIXEDNORMAL
+                                                               : CBS_UNCHECKEDNORMAL;
+            }
+
+            HTHEME hTheme = OpenThemeData(hwnd, L"BUTTON");
+            SIZE glyph_size = {GetSystemMetrics(SM_CYMENUCHECK), GetSystemMetrics(SM_CYMENUCHECK)};
+
+            if (hTheme)
+            {
+                SIZE sz = {};
+                if (SUCCEEDED(GetThemePartSize(hTheme, hdc, part, state, nullptr, TS_DRAW, &sz))) glyph_size = sz;
+
+                const int gy = rc.top + (rc.bottom - rc.top - glyph_size.cy) / 2;
+                const RECT glyph_rc = {rc.left, gy, rc.left + glyph_size.cx, gy + glyph_size.cy};
+                DrawThemeBackground(hTheme, hdc, part, state, &glyph_rc, nullptr);
+                CloseThemeData(hTheme);
+            }
+
+            TCHAR label[256] = {};
+            GetWindowText(hwnd, label, _countof(label));
+            if (label[0])
+            {
+                const RECT text_rc = {rc.left + glyph_size.cx + 4, rc.top, rc.right, rc.bottom};
+                const HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+                const HFONT hOldFont = hFont ? reinterpret_cast<HFONT>(SelectObject(hdc, hFont)) : nullptr;
+                SetTextColor(hdc, enabled ? theme_data.text_1_color : theme_data.disabled_text_color);
+                SetBkMode(hdc, TRANSPARENT);
+                DrawText(hdc, label, -1, const_cast<LPRECT>(&text_rc), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                if (hOldFont) SelectObject(hdc, hOldFont);
+            }
+
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            break;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
+    }
+
+    static void update(HWND hwnd, bool dark)
     {
         const auto style = GetWindowLongPtr(hwnd, GWL_STYLE) & 0xFL;
         if (style == BS_GROUPBOX)
         {
-            if (dark)
-                SetWindowSubclass(hwnd, groupbox_subclass_proc, 0, 0);
-            else
-                RemoveWindowSubclass(hwnd, groupbox_subclass_proc, 0);
+            GroupBoxThemer::update(hwnd, dark);
             return;
         }
 
@@ -1158,37 +1041,197 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
         if (is_check_or_radio)
         {
             DWORD_PTR old_data = 0;
-            if (GetWindowSubclass(hwnd, button_subclass_proc, 0, &old_data))
+            if (GetWindowSubclass(hwnd, subclass_proc, 0, &old_data))
             {
-                RemoveWindowSubclass(hwnd, button_subclass_proc, 0);
-                delete reinterpret_cast<ButtonContext *>(old_data);
+                RemoveWindowSubclass(hwnd, subclass_proc, 0);
+                delete reinterpret_cast<Context *>(old_data);
             }
 
             SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr);
-            if (dark)
-                SetWindowSubclass(hwnd, button_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(new ButtonContext{}));
+            if (dark) SetWindowSubclass(hwnd, subclass_proc, 0, reinterpret_cast<DWORD_PTR>(new Context{}));
 
             InvalidateRect(hwnd, nullptr, TRUE);
             return;
         }
+
+        DefaultControlThemer::update(hwnd, dark);
+    }
+};
+
+struct StatusBarThemer
+{
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
+    {
+        switch (msg)
+        {
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(hwnd, subclass_proc, sId);
+            break;
+        case WM_ERASEBKGND:
+            return TRUE;
+        case WM_PAINT: {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            RECT rc_client{};
+            GetClientRect(hwnd, &rc_client);
+
+            FillRect(hdc, &rc_client, theme_data.bg_brush);
+
+            const int part_count = static_cast<int>(SendMessage(hwnd, SB_GETPARTS, 0, 0));
+
+            int borders[3]{};
+            SendMessage(hwnd, SB_GETBORDERS, 0, reinterpret_cast<LPARAM>(borders));
+
+            HPEN divider_pen = CreatePen(PS_SOLID, 1, theme_data.statusbar_divider_color);
+            HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, divider_pen));
+
+            HFONT h_font = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+            HFONT h_old_font = static_cast<HFONT>(SelectObject(hdc, h_font));
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, theme_data.text_1_color);
+
+            HPEN sep_pen = CreatePen(PS_SOLID, 1, theme_data.statusbar_border_color);
+            HPEN tmp_pen = static_cast<HPEN>(SelectObject(hdc, sep_pen));
+            MoveToEx(hdc, rc_client.left, rc_client.top, nullptr);
+            LineTo(hdc, rc_client.right, rc_client.top);
+            SelectObject(hdc, tmp_pen);
+            DeleteObject(sep_pen);
+
+            for (int i = 0; i < part_count; ++i)
+            {
+                RECT rc_part{};
+                SendMessage(hwnd, SB_GETRECT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(&rc_part));
+
+                RECT rc_intersect{};
+                if (!IntersectRect(&rc_intersect, &ps.rcPaint, &rc_part)) continue;
+
+                FillRect(hdc, &rc_part, theme_data.bg_brush);
+
+                const bool is_last_part = (i == part_count - 1);
+                if (!is_last_part)
+                {
+                    SelectObject(hdc, divider_pen);
+                    MoveToEx(hdc, rc_part.right - 1, rc_part.top + 2, nullptr);
+                    LineTo(hdc, rc_part.right - 1, rc_part.bottom - 2);
+                }
+
+                HICON h_icon = reinterpret_cast<HICON>(SendMessage(hwnd, SB_GETICON, static_cast<WPARAM>(i), 0));
+
+                RECT rc_text = rc_part;
+                rc_text.left += borders[0];
+
+                if (h_icon)
+                {
+                    const int icon_size = GetSystemMetrics(SM_CYSMICON);
+                    const int icon_y = rc_part.top + (rc_part.bottom - rc_part.top - icon_size) / 2;
+                    DrawIconEx(hdc, rc_text.left, icon_y, h_icon, icon_size, icon_size, 0, nullptr, DI_NORMAL);
+                    rc_text.left += icon_size + borders[2];
+                }
+
+                const LRESULT text_info = SendMessage(hwnd, SB_GETTEXTLENGTH, static_cast<WPARAM>(i), 0);
+                const int text_len = LOWORD(text_info);
+
+                if (text_len > 0)
+                {
+                    std::basic_string<TCHAR> text(static_cast<size_t>(text_len) + 1, TEXT('\0'));
+                    SendMessage(hwnd, SB_GETTEXT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(text.data()));
+                    text.resize(static_cast<size_t>(text_len));
+
+                    rc_text.right -= borders[0];
+                    DrawText(hdc, text.c_str(), static_cast<int>(text.size()), &rc_text,
+                        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+                }
+            }
+
+            const auto bar_style = GetWindowLongPtr(hwnd, GWL_STYLE);
+            if (bar_style & SBARS_SIZEGRIP)
+            {
+                constexpr int DOT = 2;
+                constexpr int GAP = 2;
+                constexpr int ROWS = 3;
+                HBRUSH dot_brush = CreateSolidBrush(theme_data.statusbar_grip_color);
+
+                const int base_x = rc_client.right - 2;
+                const int base_y = rc_client.bottom - 2;
+
+                for (int row = 0; row < ROWS; ++row)
+                {
+                    for (int col = 0; col <= row; ++col)
+                    {
+                        const int x = base_x - col * (DOT + GAP) - DOT;
+                        const int y = base_y - row * (DOT + GAP) - DOT;
+                        RECT dot_rc = {x, y, x + DOT, y + DOT};
+                        FillRect(hdc, &dot_rc, dot_brush);
+                    }
+                }
+
+                DeleteObject(dot_brush);
+            }
+
+            SelectObject(hdc, h_old_font);
+            SelectObject(hdc, old_pen);
+            DeleteObject(divider_pen);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
+        default:
+            break;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    if (class_name == STATUSCLASSNAME)
+    static void update(HWND hwnd, bool dark)
     {
         if (dark)
         {
             SetWindowTheme(hwnd, L"", L"");
-            SetWindowSubclass(hwnd, statusbar_subclass_proc, 0, 0);
+            SetWindowSubclass(hwnd, subclass_proc, 0, 0);
         }
         else
         {
-            RemoveWindowSubclass(hwnd, statusbar_subclass_proc, 0);
+            RemoveWindowSubclass(hwnd, subclass_proc, 0);
             SetWindowTheme(hwnd, nullptr, nullptr);
         }
-        return;
+    }
+};
+
+struct ControlThemer
+{
+    LPCTSTR class_name;
+    void (*update)(HWND hwnd, bool dark);
+};
+
+inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
+{
+    TCHAR cls[32]{};
+    GetClassName(hwnd, cls, std::size(cls));
+    const std::basic_string<TCHAR> class_name(cls);
+
+    if (std::find(exclude.begin(), exclude.end(), hwnd) != exclude.end()) return;
+
+    _AllowDarkModeForWindow(hwnd, dark);
+
+    static constexpr ControlThemer themers[] = {
+        {WC_HEADER, HeaderThemer::update},
+        {WC_LISTVIEW, ListViewThemer::update},
+        {WC_LISTBOX, ListBoxThemer::update},
+        {WC_TABCONTROL, TabControlThemer::update},
+        {WC_BUTTON, ButtonThemer::update},
+        {STATUSCLASSNAME, StatusBarThemer::update},
+    };
+    for (const auto &themer : themers)
+    {
+        if (class_name == themer.class_name)
+        {
+            themer.update(hwnd, dark);
+            return;
+        }
     }
 
-    SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr);
+    DefaultControlThemer::update(hwnd, dark);
 }
 
 inline void update_theme_data(bool dark);
