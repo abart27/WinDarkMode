@@ -63,6 +63,7 @@ namespace WinDarkMode
 
 /**
  * @brief Custom data associated with a theme.
+ * @remarks Resources within are owned by WinDarkMode, don't delete or mutate them.
  */
 struct ThemeData
 {
@@ -85,6 +86,9 @@ struct ThemeData
 #undef COLOR
 #undef PAIR
 };
+
+namespace Internal
+{
 
 constexpr ThemeData light_theme_data = {.bg_color = RGB(255, 255, 255),
     .text_1_color = RGB(0, 0, 0),
@@ -113,6 +117,8 @@ constexpr ThemeData dark_theme_data = {.bg_color = RGB(56, 56, 56),
     .statusbar_grip_color = RGB(120, 120, 120)};
 
 inline ThemeData theme_data = light_theme_data;
+
+} // namespace Internal
 
 /**
  * @brief The available themes.
@@ -341,19 +347,19 @@ inline bool is_high_contrast()
     return high_contrast.dwFlags & HCF_HIGHCONTRASTON;
 }
 
-inline Theme effective_theme()
+inline EffectiveTheme effective_theme(Theme requested_theme = theme)
 {
-    if (theme != Theme::System) return theme;
+    if (requested_theme != Theme::System)
+        return requested_theme == Theme::Dark ? EffectiveTheme::Dark : EffectiveTheme::Light;
 
-    if (_ShouldAppsUseDarkMode() && !is_high_contrast())
-        return Theme::Dark;
-    else
-        return Theme::Light;
+    if (dark_mode_supported && _ShouldAppsUseDarkMode() && !is_high_contrast()) return EffectiveTheme::Dark;
+
+    return EffectiveTheme::Light;
 };
 
 inline bool is_dark()
 {
-    return effective_theme() == Theme::Dark;
+    return effective_theme() == EffectiveTheme::Dark;
 }
 
 inline void paint_menu_separator(HWND hwnd)
@@ -1449,16 +1455,16 @@ inline void update_window_theme(HWND hwnd, bool dark, const std::vector<HWND> &e
     RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
-inline void update_theme_data(bool dark)
+inline void update_theme_data(ThemeData &data, bool dark)
 {
 #define RECREATE(x, color)                                                                                             \
-    if (theme_data.x##_brush)                                                                                          \
+    if (data.x##_brush)                                                                                                \
     {                                                                                                                  \
-        DeleteObject(theme_data.x##_brush);                                                                            \
-        theme_data.x##_brush = nullptr;                                                                                \
+        DeleteObject(data.x##_brush);                                                                                  \
+        data.x##_brush = nullptr;                                                                                      \
     }                                                                                                                  \
-    theme_data.x##_brush = CreateSolidBrush(color);                                                                    \
-    theme_data.x##_color = color;
+    data.x##_brush = CreateSolidBrush(color);                                                                          \
+    data.x##_color = color;
 
     const auto bg_color = dark ? dark_theme_data.bg_color : GetSysColor(COLOR_3DFACE);
     RECREATE(bg, bg_color)
@@ -1470,12 +1476,18 @@ inline void update_theme_data(bool dark)
     RECREATE(tab_hover, dark ? dark_theme_data.tab_hover_color : light_theme_data.tab_hover_color)
     RECREATE(disabled_text, dark ? dark_theme_data.disabled_text_color : light_theme_data.disabled_text_color)
 
-#define UPDATE_COLOR(x) theme_data.x##_color = dark ? dark_theme_data.x##_color : light_theme_data.x##_color;
+#define UPDATE_COLOR(x) data.x##_color = dark ? dark_theme_data.x##_color : light_theme_data.x##_color;
     UPDATE_COLOR(groupbox_border)
     UPDATE_COLOR(statusbar_border)
     UPDATE_COLOR(statusbar_divider)
     UPDATE_COLOR(statusbar_grip)
 #undef UPDATE_COLOR
+#undef RECREATE
+}
+
+inline void update_theme_data(bool dark)
+{
+    update_theme_data(theme_data, dark);
 }
 
 } // namespace Internal
@@ -1529,7 +1541,7 @@ inline void CALLBACK dialog_creation_event(
  * This function does nothing if WinDarkMode is already initialized.
  *
  * Call this before any other public function.
- * All public function calls after initialization, as well as direct access to theme_data, must stay on this thread.
+ * All public function calls after initialization must stay on this thread.
  *
  * Windows passed to attach() must belong to this thread and process.
  *
@@ -1544,6 +1556,7 @@ inline void init(const InitOptions &options = {})
     if (initialized) return;
 
     initialized = true;
+    update_theme_data(false);
 
     auto RtlGetNtVersionNumbers =
         get_proc_address<fnRtlGetNtVersionNumbers>(GetModuleHandle(TEXT("ntdll.dll")), "RtlGetNtVersionNumbers");
@@ -1580,7 +1593,6 @@ inline void init(const InitOptions &options = {})
         (_AllowDarkModeForApp || _SetPreferredAppMode) && _IsDarkModeAllowedForWindow)
     {
         dark_mode_supported = true;
-        update_theme_data(is_dark());
     }
 
     WinDarkMode::set(theme);
@@ -1790,6 +1802,32 @@ inline EffectiveTheme effective_theme()
     require_initialization_thread();
     if (!dark_mode_supported) return EffectiveTheme::Light;
     return is_dark() ? EffectiveTheme::Dark : EffectiveTheme::Light;
+}
+
+/**
+ * @brief Gets the current theme data. Don't use the reference off-thread.
+ * @throws std::logic_error If called before `init()` or from a different thread.
+ */
+inline const ThemeData &theme_data()
+{
+    Internal::require_initialization_thread();
+    return Internal::theme_data;
+}
+
+/**
+ * @brief Gets the theme data for the specified theme. Don't use the reference off-thread.
+ * @throws std::logic_error If called before `init()` or from a different thread.
+ */
+inline const ThemeData &theme_data(Theme theme)
+{
+    Internal::require_initialization_thread();
+    const bool dark = Internal::effective_theme(theme) == EffectiveTheme::Dark;
+    static ThemeData light_data = Internal::light_theme_data;
+    static ThemeData dark_data = Internal::dark_theme_data;
+    auto &data = dark ? dark_data : light_data;
+    if (!data.bg_brush || (!dark && data.bg_color != GetSysColor(COLOR_3DFACE)))
+        Internal::update_theme_data(data, dark);
+    return data;
 }
 
 } // namespace WinDarkMode
