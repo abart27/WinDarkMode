@@ -10,7 +10,7 @@ Based on [win32-darkmode](https://github.com/ysc3839/win32-darkmode) with variou
 ## Features
 
 - Single-file
-- Windows 11 support
+- Compatible with Windows 11 25H2
 - Automatic theme switching
 - Compatible with MSVC, Clang, GCC
 - Works under MinGW
