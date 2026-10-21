@@ -48,7 +48,6 @@
 #include <atomic>
 #include <bit>
 #include <cctype>
-#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -269,10 +268,6 @@ struct TabControlContext
     int hover = -1;
 };
 
-struct StatusBarContext
-{
-};
-
 struct ButtonContext
 {
     bool hot = false;
@@ -296,9 +291,7 @@ using fnIsDarkModeAllowedForWindow = bool(WINAPI *)(HWND hWnd);                 
 using fnGetIsImmersiveColorUsingHighContrast = bool(WINAPI *)(IMMERSIVE_HC_CACHE_MODE mode); // ordinal 106
 using fnOpenNcThemeData = HTHEME(WINAPI *)(HWND hWnd, LPCWSTR pszClassList);                 // ordinal 49
 // 1903 18362
-using fnShouldSystemUseDarkMode = bool(WINAPI *)();                                 // ordinal 138
 using fnSetPreferredAppMode = PreferredAppMode(WINAPI *)(PreferredAppMode appMode); // ordinal 135, in 1903
-using fnIsDarkModeAllowedForApp = bool(WINAPI *)();                                 // ordinal 139
 
 inline fnFlushMenuThemes _FlushMenuThemes{};
 inline fnSetWindowCompositionAttribute _SetWindowCompositionAttribute{};
@@ -309,7 +302,6 @@ inline fnRefreshImmersiveColorPolicyState _RefreshImmersiveColorPolicyState{};
 inline fnIsDarkModeAllowedForWindow _IsDarkModeAllowedForWindow{};
 inline fnGetIsImmersiveColorUsingHighContrast _GetIsImmersiveColorUsingHighContrast{};
 inline fnOpenNcThemeData _OpenNcThemeData{};
-inline fnShouldSystemUseDarkMode _ShouldSystemUseDarkMode{};
 inline fnSetPreferredAppMode _SetPreferredAppMode{};
 
 inline HMODULE h_uxtheme{};
@@ -344,20 +336,6 @@ template <typename T> inline constexpr T data_directory_from_module_base(void *m
     return rva_to_va<T>(moduleBase, dataDir[entryID].VirtualAddress);
 }
 
-inline PIMAGE_THUNK_DATA find_address_by_name(
-    void *moduleBase, PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr, const char *funcName)
-{
-    for (; impName->u1.Ordinal; ++impName, ++impAddr)
-    {
-        if (IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal)) continue;
-
-        auto import = rva_to_va<PIMAGE_IMPORT_BY_NAME>(moduleBase, impName->u1.AddressOfData);
-        if (strcmp(import->Name, funcName) != 0) continue;
-        return impAddr;
-    }
-    return nullptr;
-}
-
 inline bool equal_ignore_case(const char *lhs, const char *rhs)
 {
     while (*lhs && *rhs)
@@ -368,35 +346,6 @@ inline bool equal_ignore_case(const char *lhs, const char *rhs)
         ++rhs;
     }
     return *lhs == *rhs;
-}
-
-inline PIMAGE_THUNK_DATA find_iat_thunk_in_module(void *moduleBase, const char *dllName, const char *funcName)
-{
-    auto imports = data_directory_from_module_base<PIMAGE_IMPORT_DESCRIPTOR>(moduleBase, IMAGE_DIRECTORY_ENTRY_IMPORT);
-    for (; imports->Name; ++imports)
-    {
-        if (!equal_ignore_case(rva_to_va<LPCSTR>(moduleBase, imports->Name), dllName)) continue;
-
-        auto origThunk = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->OriginalFirstThunk);
-        auto thunk = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->FirstThunk);
-        return find_address_by_name(moduleBase, origThunk, thunk, funcName);
-    }
-    return nullptr;
-}
-
-inline PIMAGE_THUNK_DATA find_delay_load_thunk_in_module(void *moduleBase, const char *dllName, const char *funcName)
-{
-    auto imports =
-        data_directory_from_module_base<PIMAGE_DELAYLOAD_DESCRIPTOR>(moduleBase, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT);
-    for (; imports->DllNameRVA; ++imports)
-    {
-        if (!equal_ignore_case(rva_to_va<LPCSTR>(moduleBase, imports->DllNameRVA), dllName)) continue;
-
-        auto impName = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportNameTableRVA);
-        auto impAddr = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportAddressTableRVA);
-        return find_address_by_name(moduleBase, impName, impAddr, funcName);
-    }
-    return nullptr;
 }
 
 inline bool is_high_contrast()
@@ -561,22 +510,14 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
 
         const int nTabs = TabCtrl_GetItemCount(hwnd);
         const int nSelTab = TabCtrl_GetCurSel(hwnd);
-        const UINT id = static_cast<UINT>(GetDlgCtrlID(hwnd));
 
         for (int i = 0; i < nTabs; i++)
         {
-            DRAWITEMSTRUCT dis{};
-            dis.CtlType = ODT_TAB;
-            dis.CtlID = id;
-            dis.itemID = static_cast<UINT>(i);
-            dis.itemAction = ODA_DRAWENTIRE;
-            dis.itemState = (i == nSelTab) ? ODS_SELECTED : ODS_DEFAULT;
-            dis.hwndItem = hwnd;
-            dis.hDC = hdc;
-            TabCtrl_GetItemRect(hwnd, i, &dis.rcItem);
+            RECT rc_item{};
+            TabCtrl_GetItemRect(hwnd, i, &rc_item);
 
             RECT rcIntersect{};
-            if (!IntersectRect(&rcIntersect, &ps.rcPaint, &dis.rcItem)) continue;
+            if (!IntersectRect(&rcIntersect, &ps.rcPaint, &rc_item)) continue;
 
             const bool selected = (i == nSelTab);
             const bool hovered = (i == ctx->hover);
@@ -587,18 +528,17 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
             HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, tab_pen));
             HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(hdc, tab_brush));
             constexpr int corner_radius = 6;
-            RoundRect(hdc, dis.rcItem.left, dis.rcItem.top, dis.rcItem.right, dis.rcItem.bottom, corner_radius,
-                corner_radius);
+            RoundRect(hdc, rc_item.left, rc_item.top, rc_item.right, rc_item.bottom, corner_radius, corner_radius);
 
-            RECT bottom_rc = dis.rcItem;
+            RECT bottom_rc = rc_item;
             bottom_rc.top = bottom_rc.bottom - corner_radius;
             FillRect(hdc, &bottom_rc, tab_brush);
-            MoveToEx(hdc, dis.rcItem.left, dis.rcItem.top + corner_radius / 2, nullptr);
-            LineTo(hdc, dis.rcItem.left, dis.rcItem.bottom);
-            MoveToEx(hdc, dis.rcItem.right - 1, dis.rcItem.top + corner_radius / 2, nullptr);
-            LineTo(hdc, dis.rcItem.right - 1, dis.rcItem.bottom);
-            MoveToEx(hdc, dis.rcItem.left, dis.rcItem.bottom - 1, nullptr);
-            LineTo(hdc, dis.rcItem.right, dis.rcItem.bottom - 1);
+            MoveToEx(hdc, rc_item.left, rc_item.top + corner_radius / 2, nullptr);
+            LineTo(hdc, rc_item.left, rc_item.bottom);
+            MoveToEx(hdc, rc_item.right - 1, rc_item.top + corner_radius / 2, nullptr);
+            LineTo(hdc, rc_item.right - 1, rc_item.bottom);
+            MoveToEx(hdc, rc_item.left, rc_item.bottom - 1, nullptr);
+            LineTo(hdc, rc_item.right, rc_item.bottom - 1);
 
             SelectObject(hdc, old_brush);
             SelectObject(hdc, old_pen);
@@ -615,7 +555,7 @@ inline LRESULT CALLBACK tabcontrol_subclass_proc(
             SetTextColor(hdc, theme_data.text_1_color);
             HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
             HFONT hOldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
-            DrawText(hdc, label, -1, &dis.rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            DrawText(hdc, label, -1, &rc_item, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
             SelectObject(hdc, hOldFont);
         }
 
@@ -928,14 +868,11 @@ inline LRESULT CALLBACK button_subclass_proc(
 }
 
 inline LRESULT CALLBACK statusbar_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR dwRefData)
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR sId, DWORD_PTR)
 {
-    auto *ctx = reinterpret_cast<StatusBarContext *>(dwRefData);
-
     switch (msg)
     {
     case WM_NCDESTROY:
-        delete ctx;
         RemoveWindowSubclass(hwnd, statusbar_subclass_proc, sId);
         break;
     case WM_ERASEBKGND:
@@ -950,9 +887,6 @@ inline LRESULT CALLBACK statusbar_subclass_proc(
         FillRect(hdc, &rc_client, theme_data.bg_brush);
 
         const int part_count = static_cast<int>(SendMessage(hwnd, SB_GETPARTS, 0, 0));
-
-        std::vector<int> right_edges(static_cast<size_t>(part_count));
-        SendMessage(hwnd, SB_GETPARTS, static_cast<WPARAM>(part_count), reinterpret_cast<LPARAM>(right_edges.data()));
 
         int borders[3]{};
         SendMessage(hwnd, SB_GETBORDERS, 0, reinterpret_cast<LPARAM>(borders));
@@ -1241,14 +1175,10 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
 
     if (class_name == STATUSCLASSNAME)
     {
-        DWORD_PTR old_data = 0;
-        if (GetWindowSubclass(hwnd, statusbar_subclass_proc, 0, &old_data))
-            delete reinterpret_cast<StatusBarContext *>(old_data);
-
         if (dark)
         {
             SetWindowTheme(hwnd, L"", L"");
-            SetWindowSubclass(hwnd, statusbar_subclass_proc, 0, reinterpret_cast<DWORD_PTR>(new StatusBarContext{}));
+            SetWindowSubclass(hwnd, statusbar_subclass_proc, 0, 0);
         }
         else
         {
@@ -1258,19 +1188,7 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
         return;
     }
 
-    static const std::unordered_map<std::basic_string<TCHAR>, std::wstring> theme_map = {};
-
-    if (dark)
-    {
-        if (theme_map.contains(class_name))
-            SetWindowTheme(hwnd, theme_map.at(class_name).c_str(), nullptr);
-        else
-            SetWindowTheme(hwnd, L"DarkMode_DarkTheme", nullptr);
-    }
-    else
-    {
-        SetWindowTheme(hwnd, nullptr, nullptr);
-    }
+    SetWindowTheme(hwnd, dark ? L"DarkMode_DarkTheme" : nullptr, nullptr);
 }
 
 inline void update_theme_data(bool dark);
