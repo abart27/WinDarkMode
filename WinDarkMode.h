@@ -326,8 +326,7 @@ inline DWORD build_number = 0;
 inline void require_initialization_thread()
 {
     const DWORD thread_id = initialization_thread_id.load();
-    if (!thread_id)
-        throw std::logic_error("WinDarkMode::init() must be called first");
+    if (!thread_id) throw std::logic_error("WinDarkMode::init() must be called first");
     if (thread_id != GetCurrentThreadId())
         throw std::logic_error("WinDarkMode must be used on the thread that called init()");
 }
@@ -355,15 +354,6 @@ inline PIMAGE_THUNK_DATA find_address_by_name(
         auto import = rva_to_va<PIMAGE_IMPORT_BY_NAME>(moduleBase, impName->u1.AddressOfData);
         if (strcmp(import->Name, funcName) != 0) continue;
         return impAddr;
-    }
-    return nullptr;
-}
-
-inline PIMAGE_THUNK_DATA find_address_by_ordinal(PIMAGE_THUNK_DATA impName, PIMAGE_THUNK_DATA impAddr, uint16_t ordinal)
-{
-    for (; impName->u1.Ordinal; ++impName, ++impAddr)
-    {
-        if (IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal) && IMAGE_ORDINAL(impName->u1.Ordinal) == ordinal) return impAddr;
     }
     return nullptr;
 }
@@ -405,21 +395,6 @@ inline PIMAGE_THUNK_DATA find_delay_load_thunk_in_module(void *moduleBase, const
         auto impName = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportNameTableRVA);
         auto impAddr = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportAddressTableRVA);
         return find_address_by_name(moduleBase, impName, impAddr, funcName);
-    }
-    return nullptr;
-}
-
-inline PIMAGE_THUNK_DATA find_delay_load_thunk_in_module(void *moduleBase, const char *dllName, uint16_t ordinal)
-{
-    auto imports =
-        data_directory_from_module_base<PIMAGE_DELAYLOAD_DESCRIPTOR>(moduleBase, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT);
-    for (; imports->DllNameRVA; ++imports)
-    {
-        if (!equal_ignore_case(rva_to_va<LPCSTR>(moduleBase, imports->DllNameRVA), dllName)) continue;
-
-        auto impName = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportNameTableRVA);
-        auto impAddr = rva_to_va<PIMAGE_THUNK_DATA>(moduleBase, imports->ImportAddressTableRVA);
-        return find_address_by_ordinal(impName, impAddr, ordinal);
     }
     return nullptr;
 }
@@ -468,39 +443,31 @@ inline void paint_menu_separator(HWND hwnd)
     }
 }
 
-inline void refresh_titlebar(HWND hwnd, bool dark)
-{
-    if (build_number < 18362)
-        SetProp(hwnd, TEXT("UseImmersiveDarkModeColors"), reinterpret_cast<HANDLE>(static_cast<INT_PTR>(dark)));
-    if (_SetWindowCompositionAttribute)
-    {
-        BOOL dark2 = dark;
-        WINDOWCOMPOSITIONATTRIBDATA data = {WCA_USEDARKMODECOLORS, &dark2, sizeof(dark2)};
-        _SetWindowCompositionAttribute(hwnd, &data);
-    }
-}
-
-inline bool is_theme_change_message(UINT message, LPARAM lparam)
-{
-    if (message != WM_SETTINGCHANGE) return false;
-
-    bool is = false;
-    const auto lparam_str = reinterpret_cast<LPCTSTR>(lparam);
-    if (lparam && lstrcmpi(lparam_str, TEXT("ImmersiveColorSet")) == 0)
-    {
-        _RefreshImmersiveColorPolicyState();
-        is = true;
-    }
-    _GetIsImmersiveColorUsingHighContrast(IHCM_REFRESH);
-    return is;
-}
-
 inline void patch_scrollbar(bool dark)
 {
     HMODULE comctl_mod = LoadLibraryEx(TEXT("comctl32.dll"), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!comctl_mod) return;
 
-    const auto addr = find_delay_load_thunk_in_module(comctl_mod, "uxtheme.dll", 49); // OpenNcThemeData
+    PIMAGE_THUNK_DATA addr = nullptr;
+    auto imports =
+        data_directory_from_module_base<PIMAGE_DELAYLOAD_DESCRIPTOR>(comctl_mod, IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT);
+    for (; imports->DllNameRVA; ++imports)
+    {
+        if (!equal_ignore_case(rva_to_va<LPCSTR>(comctl_mod, imports->DllNameRVA), "uxtheme.dll")) continue;
+
+        auto impName = rva_to_va<PIMAGE_THUNK_DATA>(comctl_mod, imports->ImportNameTableRVA);
+        auto impAddr = rva_to_va<PIMAGE_THUNK_DATA>(comctl_mod, imports->ImportAddressTableRVA);
+        for (; impName->u1.Ordinal; ++impName, ++impAddr)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(impName->u1.Ordinal) &&
+                IMAGE_ORDINAL(impName->u1.Ordinal) == 49) // OpenNcThemeData
+            {
+                addr = impAddr;
+                break;
+            }
+        }
+        break;
+    }
     if (!addr)
     {
         FreeLibrary(comctl_mod);
@@ -1306,25 +1273,6 @@ inline void update_control(HWND hwnd, bool dark, const std::vector<HWND> &exclud
     }
 }
 
-struct UpdateChildrenContext
-{
-    bool dark;
-    const std::vector<HWND> *exclude;
-};
-
-inline void update_children(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
-{
-    UpdateChildrenContext ctx{dark, &exclude};
-    EnumChildWindows(
-        hwnd,
-        [](HWND hwnd, LPARAM lparam) -> BOOL {
-            const auto *ctx = reinterpret_cast<const UpdateChildrenContext *>(lparam);
-            update_control(hwnd, ctx->dark, *ctx->exclude);
-            return TRUE;
-        },
-        reinterpret_cast<LPARAM>(&ctx));
-}
-
 inline void update_theme_data(bool dark);
 inline void update_window_theme(HWND hwnd, bool dark, const std::vector<HWND> &exclude);
 
@@ -1344,8 +1292,14 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
         FillRect(reinterpret_cast<HDC>(wParam), &client_rect, brush);
         return TRUE;
     }
-    case WM_SETTINGCHANGE:
-        if (theme == Theme::System && is_theme_change_message(msg, lParam))
+    case WM_SETTINGCHANGE: {
+        if (theme != Theme::System) break;
+
+        const auto lparam_str = reinterpret_cast<LPCTSTR>(lParam);
+        const bool theme_changed = lParam && lstrcmpi(lparam_str, TEXT("ImmersiveColorSet")) == 0;
+        if (theme_changed) _RefreshImmersiveColorPolicyState();
+        _GetIsImmersiveColorUsingHighContrast(IHCM_REFRESH);
+        if (theme_changed)
         {
             const auto dark = is_dark();
             update_theme_data(dark);
@@ -1357,6 +1311,7 @@ inline LRESULT CALLBACK wnd_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
             update_window_theme(hwnd, dark, exclude);
         }
         break;
+    }
     case WM_NCPAINT: {
         const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
         if (!is_dark()) return result;
@@ -1501,29 +1456,34 @@ inline LRESULT CALLBACK dlg_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LP
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline bool is_top_level_window(HWND hwnd)
-{
-    if (!IsWindow(hwnd)) return false;
-
-    const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
-
-    if ((style & WS_OVERLAPPEDWINDOW) || (style & WS_POPUP))
-    {
-        HWND parent = GetParent(hwnd);
-        if (!parent) return true;
-    }
-    return false;
-}
-
 inline void update_window_theme(HWND hwnd, bool dark, const std::vector<HWND> &exclude)
 {
     _AllowDarkModeForWindow(hwnd, dark);
     BOOL dark2 = dark;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark2, sizeof(dark2));
-    refresh_titlebar(hwnd, dark);
-    update_children(hwnd, dark, exclude);
-    DrawMenuBar(hwnd);
+    if (build_number < 18362)
+        SetProp(hwnd, TEXT("UseImmersiveDarkModeColors"), reinterpret_cast<HANDLE>(static_cast<INT_PTR>(dark)));
+    if (_SetWindowCompositionAttribute)
+    {
+        WINDOWCOMPOSITIONATTRIBDATA data = {WCA_USEDARKMODECOLORS, &dark2, sizeof(dark2)};
+        _SetWindowCompositionAttribute(hwnd, &data);
+    }
 
+    struct UpdateChildrenContext
+    {
+        bool dark;
+        const std::vector<HWND> *exclude;
+    };
+    UpdateChildrenContext ctx{dark, &exclude};
+    EnumChildWindows(
+        hwnd,
+        [](HWND hwnd, LPARAM lparam) -> BOOL {
+            const auto *ctx = reinterpret_cast<const UpdateChildrenContext *>(lparam);
+            update_control(hwnd, ctx->dark, *ctx->exclude);
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&ctx));
+    DrawMenuBar(hwnd);
 
     RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
@@ -1596,23 +1556,8 @@ namespace Internal
 inline InitOptions init_options;
 inline HWINEVENTHOOK dialog_creation_hook = nullptr;
 
-inline void attach_system_dialog(HWND hwnd);
-
 inline void CALLBACK dialog_creation_event(
-    HWINEVENTHOOK, DWORD event, HWND hwnd, LONG object_id, LONG child_id, DWORD, DWORD)
-{
-    if ((event != EVENT_OBJECT_CREATE && event != EVENT_OBJECT_SHOW) || !hwnd || object_id != OBJID_WINDOW ||
-        child_id != CHILDID_SELF)
-        return;
-
-    DWORD process_id = 0;
-    const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
-    if (process_id != GetCurrentProcessId() || thread_id != initialization_thread_id.load() ||
-        GetCurrentThreadId() != thread_id)
-        return;
-
-    attach_system_dialog(hwnd);
-}
+    HWINEVENTHOOK, DWORD event, HWND hwnd, LONG object_id, LONG child_id, DWORD, DWORD);
 } // namespace Internal
 
 /**
@@ -1682,8 +1627,8 @@ inline void init(const InitOptions &options = {})
     init_options = options;
     if (dark_mode_supported && options.affect_messageboxes.value_or(true))
     {
-        dialog_creation_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, nullptr,
-            dialog_creation_event, GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT);
+        dialog_creation_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, nullptr, dialog_creation_event,
+            GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT);
     }
 }
 
@@ -1702,7 +1647,8 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
     DWORD process_id = 0;
     const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
     if (thread_id != GetCurrentThreadId() || process_id != GetCurrentProcessId())
-        throw std::logic_error("WinDarkMode::attach() requires a valid window owned by the thread that called WinDarkMode::init()");
+        throw std::logic_error(
+            "WinDarkMode::attach() requires a valid window owned by the thread that called WinDarkMode::init()");
 
     if (!dark_mode_supported || attached_windows.contains(hwnd)) return;
 
@@ -1714,7 +1660,13 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
     patch_scrollbar(dark);
     SetWindowSubclass(hwnd, wnd_subclass_proc, 0, 0);
 
-    const bool is_dialog = options.is_dialog.value_or(!is_top_level_window(hwnd));
+    bool top_level = false;
+    if (IsWindow(hwnd))
+    {
+        const auto style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        if ((style & WS_OVERLAPPEDWINDOW) || (style & WS_POPUP)) top_level = !GetParent(hwnd);
+    }
+    const bool is_dialog = options.is_dialog.value_or(!top_level);
     if (is_dialog) SetWindowSubclass(hwnd, dlg_subclass_proc, 0, 0);
 
     update_window_theme(hwnd, dark, options.exclude);
@@ -1722,8 +1674,22 @@ inline void attach(HWND hwnd, const AttachOptions &options = {})
 
 namespace Internal
 {
-inline RECT messagebox_button_band(HWND hwnd)
+inline void paint_messagebox(HWND hwnd, HDC hdc, bool exclude_children = true)
 {
+    const int saved = SaveDC(hdc);
+    if (!saved) return;
+    for (HWND child = exclude_children ? GetWindow(hwnd, GW_CHILD) : nullptr; child;
+        child = GetWindow(child, GW_HWNDNEXT))
+    {
+        if (!IsWindowVisible(child)) continue;
+        RECT rc{};
+        GetWindowRect(child, &rc);
+        MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT *>(&rc), 2);
+        ExcludeClipRect(hdc, rc.left, rc.top, rc.right, rc.bottom);
+    }
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    FillRect(hdc, &client, theme_data.bg_brush);
     RECT band{};
     GetClientRect(hwnd, &band);
     LONG button_top = band.bottom;
@@ -1742,26 +1708,6 @@ inline RECT messagebox_button_band(HWND hwnd)
         button_bottom = button.bottom;
     }
     band.top = (std::max)(0L, button_top - (band.bottom - button_bottom));
-    return band;
-}
-
-inline void paint_messagebox(HWND hwnd, HDC hdc, bool exclude_children = true)
-{
-    const int saved = SaveDC(hdc);
-    if (!saved) return;
-    for (HWND child = exclude_children ? GetWindow(hwnd, GW_CHILD) : nullptr; child;
-        child = GetWindow(child, GW_HWNDNEXT))
-    {
-        if (!IsWindowVisible(child)) continue;
-        RECT rc{};
-        GetWindowRect(child, &rc);
-        MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT *>(&rc), 2);
-        ExcludeClipRect(hdc, rc.left, rc.top, rc.right, rc.bottom);
-    }
-    RECT client{};
-    GetClientRect(hwnd, &client);
-    FillRect(hdc, &client, theme_data.bg_brush);
-    const RECT band = messagebox_button_band(hwnd);
     FillRect(hdc, &band, theme_data.tab_normal_brush);
     RestoreDC(hdc, saved);
 }
@@ -1797,8 +1743,19 @@ inline LRESULT CALLBACK messagebox_subclass_proc(
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-inline void attach_system_dialog(HWND hwnd)
+inline void CALLBACK dialog_creation_event(
+    HWINEVENTHOOK, DWORD event, HWND hwnd, LONG object_id, LONG child_id, DWORD, DWORD)
 {
+    if ((event != EVENT_OBJECT_CREATE && event != EVENT_OBJECT_SHOW) || !hwnd || object_id != OBJID_WINDOW ||
+        child_id != CHILDID_SELF)
+        return;
+
+    DWORD process_id = 0;
+    const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
+    if (process_id != GetCurrentProcessId() || thread_id != initialization_thread_id.load() ||
+        GetCurrentThreadId() != thread_id)
+        return;
+
     if (attached_windows.contains(hwnd) || (GetWindowLongPtr(hwnd, GWL_STYLE) & WS_CHILD)) return;
 
     WCHAR class_name[32] = {};
