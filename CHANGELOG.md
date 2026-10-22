@@ -2,6 +2,10 @@
 
 The preview version of WinDarkMode.
 
+# 2.0.0
+
+This version addresses a thread safety issue.
+
 ## 🛑 Breaking Changes
 
 ### `WinDarkMode::light_theme_data`, `WinDarkMode::dark_theme_data`, and `WinDarkMode::theme_data` privated
