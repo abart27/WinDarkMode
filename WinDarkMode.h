@@ -5,7 +5,7 @@
  */
 
 /*
- * WinDarkMode - next
+ * WinDarkMode - 2.0.0
  * https://github.com/abart27/WinDarkMode
  */
 
