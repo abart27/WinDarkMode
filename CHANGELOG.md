@@ -1,10 +1,10 @@
-# next
-
-The preview version of WinDarkMode.
-
 # 2.0.0
 
-This version addresses a thread safety issue.
+This version addresses thread safety and Unicode issues.
+
+## 🐞 Bugfixes
+
+- Fixed various Unicode issues
 
 ## 🛑 Breaking Changes
 
