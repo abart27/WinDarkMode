@@ -2,6 +2,10 @@
 
 The preview version of WinDarkMode.
 
+## 🐞 Bugfixes
+
+- Fixed various Unicode issues
+
 ## 🛑 Breaking Changes
 
 ### `WinDarkMode::light_theme_data`, `WinDarkMode::dark_theme_data`, and `WinDarkMode::theme_data` privated
