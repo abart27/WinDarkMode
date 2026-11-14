@@ -4,6 +4,14 @@ The preview version of WinDarkMode.
 
 ## 🐞 Bugfixes
 
+- Fixed issues with owner-drawn statusbars.
+
+# 2.0.0
+
+This version addresses thread safety and Unicode issues.
+
+## 🐞 Bugfixes
+
 - Fixed various Unicode issues
 
 ## 🛑 Breaking Changes
