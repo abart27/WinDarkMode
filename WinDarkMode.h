@@ -1108,8 +1108,7 @@ struct StatusBarThemer
                 RECT rc_part{};
                 SendMessage(hwnd, SB_GETRECT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(&rc_part));
 
-                RECT rc_intersect{};
-                if (!IntersectRect(&rc_intersect, &ps.rcPaint, &rc_part)) continue;
+                if (!RectVisible(hdc, &rc_part)) continue;
 
                 const bool is_last_part = (i == part_count - 1);
                 if (!is_last_part)
