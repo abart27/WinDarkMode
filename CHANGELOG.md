@@ -6,6 +6,10 @@ The preview version of WinDarkMode.
 
 - Fixed issues with owner-drawn statusbars.
 
+## ⚡ Performance
+
+- Optimized dark mode statusbar drawing
+
 # 2.0.0
 
 This version addresses thread safety and Unicode issues.
